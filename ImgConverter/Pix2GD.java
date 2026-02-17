@@ -51,7 +51,7 @@ class GDObject {
 public class Pix2GD {
     static List<Color> uniqueColors = new ArrayList<>();
 
-    public static List<GDObject> convertToGDObjects(BufferedImage image, int zLayer, int startingZOrder) {
+    public static List<GDObject> convertToGDObjectsSingleColor(BufferedImage image, int zLayer, int startingZOrder) {
         List<GDObject> gdObjects = new ArrayList<>();
         int width  = image.getWidth();
         int height = image.getHeight();
@@ -179,7 +179,7 @@ public class Pix2GD {
         return gdObjects;
     }
 
-    public static List<GDObject> convertToGDObjects2(BufferedImage image, int zLayer, int startingZOrder) {
+    public static List<GDObject> convertToGDObjects(BufferedImage image, int zLayer, int startingZOrder) {
         List<GDObject> gdObjects = new ArrayList<>();
         int width  = image.getWidth();
         int height = image.getHeight();
@@ -382,7 +382,6 @@ public class Pix2GD {
     }
 
     static void shrinkToFit(List<GDObject> objects, int[][] owner, int w, int h) {
-
         int n = objects.size();
 
         int[] minX = new int[n];
@@ -401,11 +400,8 @@ public class Pix2GD {
         // Scan pixels
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-
                 int id = owner[y][x];
-
                 if (id == -1) continue;
-
                 minX[id] = Math.min(minX[id], x);
                 minY[id] = Math.min(minY[id], y);
                 maxX[id] = Math.max(maxX[id], x);
@@ -415,7 +411,6 @@ public class Pix2GD {
 
         // Apply shrink
         for (int i = 0; i < n; i++) {
-
             // Object ended up owning nothing
             if (maxX[i] < minX[i]) {
                 objects.remove(i);
@@ -425,7 +420,6 @@ public class Pix2GD {
             }
 
             GDObject obj = objects.get(i);
-
             obj.x = minX[i];
             obj.y = minY[i];
             obj.width  = maxX[i] - minX[i] + 1;
@@ -453,7 +447,7 @@ public class Pix2GD {
 
         long startTime = System.currentTimeMillis();
         
-        List<GDObject> gdObjects = convertToGDObjects2(image, l, o);
+        List<GDObject> gdObjects = convertToGDObjects(image, l, o);
         //gdObjects = removeHiddenObjects2(gdObjects, image.getWidth(), image.getHeight());
         //int[][] owner = buildOwnerMap(gdObjects, image.getWidth(), image.getHeight());
         //shrinkToFit(gdObjects, owner, image.getWidth(), image.getHeight());
