@@ -28,7 +28,7 @@ class GDObject {
     }
     
     //@Override
-    public String toString(float scale, int startColorID) {
+    public String toString(float scale, int startColorID, int startZOrder) {
         final DecimalFormat DF = new DecimalFormat("0.########", DecimalFormatSymbols.getInstance(Locale.US));
 
         float centerX = 180.0f + (x*scale + ((width*scale) / 2.0f))*7.5f;
@@ -44,7 +44,7 @@ class GDObject {
             DF.format(width*scale),
             DF.format(height*scale),
             startColorID+color,
-            zOrder
+            zOrder-startZOrder
         );
     }
 }
@@ -324,18 +324,36 @@ public class Pix2GD {
         return gdObjects;
     }
 
-    static List<GDObject> removeRedundantObjects(List<GDObject> objects, int[][][] cov) {
+    static public int[][] getCoverage(List<GDObject> objects, int width, int height){
+        int[][] coverage = new int[width][height];
+
+        for(int i = 0; i < objects.size(); i++){
+            GDObject obj = objects.get(i);
+            for(int y = obj.y; y < obj.y+obj.height; y++){
+                for(int x = obj.x; x < obj.x+obj.width; x++){
+                    //if the object has a different color, its visible on top, save its index
+                    if(coverage[x][y] == 0 || objects.get(Math.abs(coverage[x][y])-1).color != obj.color){
+                        coverage[x][y] = i+1;
+                    }
+                    else{ //if the same color behind, then its negative to indicate this
+                        coverage[x][y] = -(i+1);
+                    }
+                }
+            }
+        }
+        return coverage;
+    }
+
+    static List<GDObject> removeRedundantObjects(List<GDObject> objects, int[][] cov) {
         List<GDObject> nonRedundant = new ArrayList<>();
 
         for(int i = 0; i < objects.size(); i++){
             GDObject obj = objects.get(i);
-            //boolean[][] hidden = new boolean[obj.width][obj.height];
             boolean visible = false;
 
             for(int y = obj.y; y < obj.y+obj.height; y++){
                 for(int x = obj.x; x < obj.x+obj.width; x++){
-                    if(cov[x][y][obj.color] == 1){
-                        //hidden[x-obj.x][y-obj.y] = true;
+                    if(Math.abs(cov[x][y])-1 == i && cov[x][y] > 0){
                         nonRedundant.add(obj);
                         visible = true;
                         break;
@@ -368,6 +386,9 @@ public class Pix2GD {
                 boolean overlapY = curr.y < prev.y + prev.height && curr.y + curr.height > prev.y;
                 if (overlapX && overlapY) {
                     maxZ = Math.max(maxZ, prev.zOrder + 1);
+                    if(maxZ == 0){
+                        maxZ++;
+                    }
                 }
             }
 
@@ -470,28 +491,14 @@ public class Pix2GD {
         );
     }
 
-    static public int[][][] getCoverage(List<GDObject> objects, int width, int height){
-        int[][][] coverage = new int[width][height][uniqueColors.size()];
-
-        for(int i = 0; i < objects.size(); i++){
-            GDObject obj = objects.get(i);
-            for(int y = obj.y; y < obj.y+obj.height; y++){
-                for(int x = obj.x; x < obj.x+obj.width; x++){
-                    coverage[x][y][obj.color] += 1;
-                }
-            }
-        }
-
-        return coverage;
-    }
-
     public String[] run(String p, float s, int c, int l, int o) throws IOException{
         BufferedImage image = ImageIO.read(new File(p));
 
         long startTime = System.currentTimeMillis();
         
         List<GDObject> gdObjects = convertToGDObjects(image, l, o);
-        int[][][] coverage = getCoverage(gdObjects, image.getWidth(), image.getHeight());
+        int[][] coverage = getCoverage(gdObjects, image.getWidth(), image.getHeight());
+        //System.out.println(Arrays.deepToString(coverage).replace("], [", "\n"));
         gdObjects = removeRedundantObjects(gdObjects, coverage);
         shrinkObjects(gdObjects, image);
         assignZOrder(gdObjects);
@@ -504,7 +511,7 @@ public class Pix2GD {
         StringBuilder sb = new StringBuilder("");
         
         for (GDObject obj : gdObjects) {
-            sb.append(obj.toString(s, c));
+            sb.append(obj.toString(s, c, o));
         }
         
         for(int i = 0; i < uniqueColors.size(); i++){
