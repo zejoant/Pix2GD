@@ -28,7 +28,7 @@ class GDObject {
     }
     
     //@Override
-    public String toString(float scale) {
+    public String toString(float scale, int startColorID) {
         final DecimalFormat DF = new DecimalFormat("0.########", DecimalFormatSymbols.getInstance(Locale.US));
 
         float centerX = 180.0f + (x*scale + ((width*scale) / 2.0f))*7.5f;
@@ -36,14 +36,15 @@ class GDObject {
 
         return String.format(
             Locale.US,
-            "1,917,155,1,2,%s,24,%d,3,%s,25,%d,128,%s,129,%s,21,%d;",
+            "1,917,155,1,2,%s,24,%d,3,%s,25,%d,128,%s,129,%s,21,%d,20,%d;",
             DF.format(centerX),
             zLayer,
             DF.format(centerY),
             zOrder,
             DF.format(width*scale),
             DF.format(height*scale),
-            color
+            startColorID+color,
+            zOrder
         );
     }
 }
@@ -172,7 +173,7 @@ public class Pix2GD {
                 }
                 
                 //Create Object
-                int colorId = uniqueColors.indexOf(col) + 1;
+                int colorId = uniqueColors.indexOf(col);
                 gdObjects.add(new GDObject(x, y, rectWidth, rectHeight, colorId, zLayer, startingZOrder));
             }
         }
@@ -313,117 +314,144 @@ public class Pix2GD {
                 if (!uniqueColors.contains(col)) {
                     uniqueColors.add(col);
                 }
+
+                int colorId = uniqueColors.indexOf(col);
                 
                 //Create Object
-                int colorId = uniqueColors.indexOf(col) + 1;
                 gdObjects.add(new GDObject(x, y, rectWidth, rectHeight, colorId, zLayer, startingZOrder));
             }
         }
         return gdObjects;
     }
 
-    static List<GDObject> removeHiddenObjects(List<GDObject> objects, int imgWidth, int imgHeight) {
-        int[][] cover = new int[imgHeight][imgWidth];
-        for (GDObject obj : objects) {
-            for (int y = obj.y; y < obj.y + obj.height; y++) {
-                for (int x = obj.x; x < obj.x + obj.width; x++) {
-                    cover[y][x]++;
-                }
-            }
-        }
+    static List<GDObject> removeRedundantObjects(List<GDObject> objects, int[][][] cov) {
+        List<GDObject> nonRedundant = new ArrayList<>();
 
-        List<GDObject> result = new ArrayList<>();
+        for(int i = 0; i < objects.size(); i++){
+            GDObject obj = objects.get(i);
+            //boolean[][] hidden = new boolean[obj.width][obj.height];
+            boolean visible = false;
 
-        for (GDObject obj : objects) {
-            boolean fullyCovered = true;
-            for (int y = obj.y; y < obj.y + obj.height && fullyCovered; y++) {
-                for (int x = obj.x; x < obj.x + obj.width; x++) {
-                    // If only this object covers it -> visible
-                    if (cover[y][x] <= 1) {
-                        fullyCovered = false;
+            for(int y = obj.y; y < obj.y+obj.height; y++){
+                for(int x = obj.x; x < obj.x+obj.width; x++){
+                    if(cov[x][y][obj.color] == 1){
+                        //hidden[x-obj.x][y-obj.y] = true;
+                        nonRedundant.add(obj);
+                        visible = true;
                         break;
                     }
                 }
+                if(visible) break;
             }
-            if (!fullyCovered) {
-                result.add(obj);
-            }
+
         }
-        return result;
+        return nonRedundant;
     }
 
-    static int[][] buildOwnerMap(List<GDObject> objects, int w, int h) {
 
-        int[][] owner = new int[h][w];
+    static void assignZOrder(List<GDObject> objects) {
+        for (int i = 0; i < objects.size(); i++) {
+            GDObject curr = objects.get(i);
 
-        // -1 = no owner
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                owner[y][x] = -1;
-            }
-        }
+            int maxZ = curr.zOrder; // start with current zOrder
 
-        // Top to bottom
-        for (int i = objects.size() - 1; i >= 0; i--) {
+            for (int j = 0; j < i; j++) {
+                GDObject prev = objects.get(j);
 
-            GDObject obj = objects.get(i);
+                //same color can be on the same z-order
+                if(prev.color == curr.color){
+                    continue;
+                }
 
-            for (int y = obj.y; y < obj.y + obj.height; y++) {
-                for (int x = obj.x; x < obj.x + obj.width; x++) {
-
-                    if (owner[y][x] == -1) {
-                        owner[y][x] = i;
-                    }
+                // Check if prev overlaps curr
+                boolean overlapX = curr.x < prev.x + prev.width && curr.x + curr.width > prev.x;
+                boolean overlapY = curr.y < prev.y + prev.height && curr.y + curr.height > prev.y;
+                if (overlapX && overlapY) {
+                    maxZ = Math.max(maxZ, prev.zOrder + 1);
                 }
             }
-        }
 
-        return owner;
+            curr.zOrder = maxZ;
+        }
     }
 
-    static void shrinkToFit(List<GDObject> objects, int[][] owner, int w, int h) {
-        int n = objects.size();
+    static void shrinkObjects(List<GDObject> objects, BufferedImage image) {
+        for (GDObject obj : objects) {
+            int minX = obj.x;
+            int minY = obj.y;
+            int maxX = obj.x + obj.width - 1;
+            int maxY = obj.y + obj.height - 1;
 
-        int[] minX = new int[n];
-        int[] minY = new int[n];
-        int[] maxX = new int[n];
-        int[] maxY = new int[n];
+            boolean shrink = true;
 
-        // Init
-        for (int i = 0; i < n; i++) {
-            minX[i] = Integer.MAX_VALUE;
-            minY[i] = Integer.MAX_VALUE;
-            maxX[i] = -1;
-            maxY[i] = -1;
-        }
-
-        // Scan pixels
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int id = owner[y][x];
-                if (id == -1) continue;
-                minX[id] = Math.min(minX[id], x);
-                minY[id] = Math.min(minY[id], y);
-                maxX[id] = Math.max(maxX[id], x);
-                maxY[id] = Math.max(maxY[id], y);
-            }
-        }
-
-        // Apply shrink
-        for (int i = 0; i < n; i++) {
-            // Object ended up owning nothing
-            if (maxX[i] < minX[i]) {
-                objects.remove(i);
-                i--;
-                n--;
-                continue;
+            // Shrink from top
+            while (minY <= maxY && shrink) {
+                for (int x = minX; x <= maxX; x++) {
+                    int p = image.getRGB(x, minY);
+                    int alpha = (p >>> 24) & 0xFF;
+                    int rgb   = p & 0xFFFFFF;
+                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
+                        shrink = false;
+                        break;
+                    }
+                }
+                if (shrink) minY++;
+                else break;
             }
 
-            GDObject obj = objects.get(i);
-            obj.x = minX[i];
-            obj.y = minY[i];
-            obj.width  = maxX[i] - minX[i] + 1;
-            obj.height = maxY[i] - minY[i] + 1;
+            shrink = true;
+            // Shrink from bottom
+            while (maxY >= minY && shrink) {
+                for (int x = minX; x <= maxX; x++) {
+                    int p = image.getRGB(x, maxY);
+                    int alpha = (p >>> 24) & 0xFF;
+                    int rgb   = p & 0xFFFFFF;
+                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
+                        shrink = false;
+                        break;
+                    }
+                }
+                if (shrink) maxY--;
+                else break;
+            }
+
+            shrink = true;
+            // Shrink from left
+            while (minX <= maxX && shrink) {
+                for (int y = minY; y <= maxY; y++) {
+                    int p = image.getRGB(minX, y);
+                    int alpha = (p >>> 24) & 0xFF;
+                    int rgb   = p & 0xFFFFFF;
+                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
+                        shrink = false;
+                        break;
+                    }
+                }
+                if (shrink) minX++;
+                else break;
+            }
+
+            shrink = true;
+            // Shrink from right
+            while (maxX >= minX && shrink) {
+                for (int y = minY; y <= maxY; y++) {
+                    int p = image.getRGB(maxX, y);
+                    int alpha = (p >>> 24) & 0xFF;
+                    int rgb   = p & 0xFFFFFF;
+                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
+                        shrink = false;
+                        break;
+                    }
+                }
+                if (shrink) maxX--;
+                else break;
+            }
+
+            // Apply new dimensions
+            obj.x = minX;
+            obj.y = minY;
+            obj.width  = maxX - minX + 1;
+            obj.height = maxY - minY + 1;
         }
     }
     
@@ -442,29 +470,48 @@ public class Pix2GD {
         );
     }
 
+    static public int[][][] getCoverage(List<GDObject> objects, int width, int height){
+        int[][][] coverage = new int[width][height][uniqueColors.size()];
+
+        for(int i = 0; i < objects.size(); i++){
+            GDObject obj = objects.get(i);
+            for(int y = obj.y; y < obj.y+obj.height; y++){
+                for(int x = obj.x; x < obj.x+obj.width; x++){
+                    coverage[x][y][obj.color] += 1;
+                }
+            }
+        }
+
+        return coverage;
+    }
+
     public String[] run(String p, float s, int c, int l, int o) throws IOException{
         BufferedImage image = ImageIO.read(new File(p));
 
         long startTime = System.currentTimeMillis();
         
         List<GDObject> gdObjects = convertToGDObjects(image, l, o);
-        //gdObjects = removeHiddenObjects2(gdObjects, image.getWidth(), image.getHeight());
-        //int[][] owner = buildOwnerMap(gdObjects, image.getWidth(), image.getHeight());
-        //shrinkToFit(gdObjects, owner, image.getWidth(), image.getHeight());
+        int[][][] coverage = getCoverage(gdObjects, image.getWidth(), image.getHeight());
+        gdObjects = removeRedundantObjects(gdObjects, coverage);
+        shrinkObjects(gdObjects, image);
+        assignZOrder(gdObjects);
 
         long endTime = System.currentTimeMillis();
         float measuredTime = (endTime - startTime) / 1000.0f;
         //System.out.println("time taken: " + measuredTime);
 
+        
         StringBuilder sb = new StringBuilder("");
-
+        
         for (GDObject obj : gdObjects) {
-            sb.append(obj.toString(s));
+            sb.append(obj.toString(s, c));
+        }
+        
+        for(int i = 0; i < uniqueColors.size(); i++){
+            sb.append(colorToTrigger(i+c, uniqueColors.get(i)));
         }
 
-        for(int i = 0; i < uniqueColors.size(); i++){
-            sb.append(colorToTrigger(i+1, uniqueColors.get(i)));
-        }
+        uniqueColors.clear(); //empty it in case you run again
 
         String finishedLevelString = sb.toString();
         String[] arr = {String.valueOf(gdObjects.size()), finishedLevelString, Float.toString(measuredTime)};

@@ -5,6 +5,7 @@ import ImgConverter.Pix2GD;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.ChangeEvent;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.*;
@@ -21,6 +22,8 @@ public class MyApp {
     private static int zLayer = 7;
     private static int startZOrder = 1;
     private static int startColor = 1;
+
+    private int lastZOrderValue = startZOrder;
 
     private static String[] convertedData;
 
@@ -108,9 +111,10 @@ public class MyApp {
         panel.add(createSectionLabel("Settings"));
         panel.add(Box.createVerticalStrut(10));
         panel.add(createRow("Scale:", scaleField = smallText(String.valueOf(scale))));
-        panel.add(createRow("Start Color:", colorSpinner = spinner(startColor, 0, 9999, 1)));
+        panel.add(createRow("Start Color:", colorSpinner = spinner(startColor, 1, 9999, 1)));
         panel.add(createRow("Z-Layer:", zLayerSpinner = spinner(zLayer, -5, 9, 2)));
         panel.add(createRow("Start Z-Order:", zOrderSpinner = spinner(startZOrder, -100, 100, 1)));
+        zOrderSpinner.addChangeListener(e -> preventZero(e));
         panel.add(Box.createVerticalStrut(25));
 
         /* Actions */
@@ -201,6 +205,25 @@ public class MyApp {
         runBtn.setEnabled(true);
         exportBtn.setEnabled(false);
         statusLabel.setText("Loaded: " + file.getName());
+    }
+
+    private void preventZero(ChangeEvent e){
+        JSpinner spinner = (JSpinner) e.getSource();
+        int value = (int)spinner.getValue();
+        if(value == 0){
+            if(lastZOrderValue > value){
+                zOrderSpinner.setValue(-1);
+                lastZOrderValue = -2;
+                return;
+            }
+            else if(lastZOrderValue < value){
+                zOrderSpinner.setValue(1);
+                lastZOrderValue = 2;
+                return;
+            }
+        }
+
+        lastZOrderValue = value;
     }
 
     private void loadImage() {
