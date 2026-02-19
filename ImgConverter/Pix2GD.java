@@ -366,7 +366,6 @@ public class Pix2GD {
         return nonRedundant;
     }
 
-
     static void assignZOrder(List<GDObject> objects) {
         for (int i = 0; i < objects.size(); i++) {
             GDObject curr = objects.get(i);
@@ -395,84 +394,114 @@ public class Pix2GD {
             curr.zOrder = maxZ;
         }
     }
+    
+    static void shrinkObjects(List<GDObject> objects, BufferedImage image){
+        //int[][] cov = getCoverage(objects, image.getWidth(), image.getHeight());
 
-    static void shrinkObjects(List<GDObject> objects, BufferedImage image) {
-        for (GDObject obj : objects) {
-            int minX = obj.x;
-            int minY = obj.y;
-            int maxX = obj.x + obj.width - 1;
-            int maxY = obj.y + obj.height - 1;
+        //create coverage list
+        @SuppressWarnings("unchecked")
+        List<Integer>[][] cov = (List<Integer>[][]) new ArrayList[image.getWidth()][image.getHeight()];
+        for (int x = 0; x < image.getWidth(); x++) {
+            for (int y = 0; y < image.getHeight(); y++) {
+                cov[x][y] = new ArrayList<>();
+            }
+        }
 
-            boolean shrink = true;
+        //fill coverage list
+        for(int i = 0; i < objects.size(); i++){
+            GDObject obj = objects.get(i);
+            for(int y = obj.y; y < obj.y+obj.height; y++){
+                for(int x = obj.x; x < obj.x+obj.width; x++){
+                    cov[x][y].add(i);
+                }
+            }
+        }
+        
+        //shrink objects
+        for(int i = 0; i < objects.size(); i++){
+            GDObject obj = objects.get(i);
+            boolean canShrink = true;
 
-            // Shrink from top
-            while (minY <= maxY && shrink) {
-                for (int x = minX; x <= maxX; x++) {
-                    int p = image.getRGB(x, minY);
-                    int alpha = (p >>> 24) & 0xFF;
-                    int rgb   = p & 0xFFFFFF;
-                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
-                        shrink = false;
+            //shrink top
+            while(canShrink && obj.height > 1){
+                int y = obj.y;
+                for(int x = obj.x; x < obj.x+obj.width; x++){
+                    int size = cov[x][y].size();
+                    int ind = cov[x][y].get(size-1);
+                    if(ind == i && (size == 1 || objects.get(cov[x][y].get(size-2)).color != obj.color)){
+                        canShrink = false;
                         break;
                     }
                 }
-                if (shrink) minY++;
-                else break;
+                if(canShrink){
+                    obj.y++;
+                    obj.height--;
+                    for(int x = obj.x; x < obj.x+obj.width; x++){
+                        cov[x][y].remove(cov[x][y].indexOf(i));
+                    }
+                }
             }
 
-            shrink = true;
-            // Shrink from bottom
-            while (maxY >= minY && shrink) {
-                for (int x = minX; x <= maxX; x++) {
-                    int p = image.getRGB(x, maxY);
-                    int alpha = (p >>> 24) & 0xFF;
-                    int rgb   = p & 0xFFFFFF;
-                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
-                        shrink = false;
+            //shrink bottom
+            canShrink = true;
+            while(canShrink && obj.height > 1){
+                int y = obj.y+obj.height-1;
+                for(int x = obj.x; x < obj.x+obj.width; x++){
+                    int size = cov[x][y].size();
+                    int ind = cov[x][y].get(size-1);
+                    if(ind == i && (size == 1 || objects.get(cov[x][y].get(size-2)).color != obj.color)){
+                        canShrink = false;
                         break;
                     }
                 }
-                if (shrink) maxY--;
-                else break;
+                if(canShrink){
+                    obj.height--;
+                    for(int x = obj.x; x < obj.x+obj.width; x++){
+                        cov[x][y].remove(cov[x][y].indexOf(i));
+                    }
+                }
             }
 
-            shrink = true;
-            // Shrink from left
-            while (minX <= maxX && shrink) {
-                for (int y = minY; y <= maxY; y++) {
-                    int p = image.getRGB(minX, y);
-                    int alpha = (p >>> 24) & 0xFF;
-                    int rgb   = p & 0xFFFFFF;
-                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
-                        shrink = false;
+            //shrink left
+            canShrink = true;
+            while(canShrink && obj.width > 1){
+                int x = obj.x;
+                for(int y = obj.y; y < obj.y+obj.height; y++){
+                    int size = cov[x][y].size();
+                    int ind = cov[x][y].get(size-1);
+                    if(ind == i && (size == 1 || objects.get(cov[x][y].get(size-2)).color != obj.color)){
+                        canShrink = false;
                         break;
                     }
                 }
-                if (shrink) minX++;
-                else break;
+                if(canShrink){
+                    obj.x++;
+                    obj.width--;
+                    for(int y = obj.y; y < obj.y+obj.height; y++){
+                        cov[x][y].remove(cov[x][y].indexOf(i));
+                    }
+                }
             }
 
-            shrink = true;
-            // Shrink from right
-            while (maxX >= minX && shrink) {
-                for (int y = minY; y <= maxY; y++) {
-                    int p = image.getRGB(maxX, y);
-                    int alpha = (p >>> 24) & 0xFF;
-                    int rgb   = p & 0xFFFFFF;
-                    if (alpha != 0 && rgb == (new Color(uniqueColors.get(obj.color).getRGB()).getRGB() & 0xFFFFFF)) {
-                        shrink = false;
+            //shrink right
+            canShrink = true;
+            while(canShrink && obj.width > 1){
+                int x = obj.x+obj.width-1;
+                for(int y = obj.y; y < obj.y+obj.height; y++){
+                    int size = cov[x][y].size();
+                    int ind = cov[x][y].get(size-1);
+                    if(ind == i && (size == 1 || objects.get(cov[x][y].get(size-2)).color != obj.color)){
+                        canShrink = false;
                         break;
                     }
                 }
-                if (shrink) maxX--;
-                else break;
+                if(canShrink){
+                    obj.width--;
+                    for(int y = obj.y; y < obj.y+obj.height; y++){
+                        cov[x][y].remove(cov[x][y].indexOf(i));
+                    }
+                }
             }
-
-            // Apply new dimensions
-            obj.x = minX;
-            obj.y = minY;
-            obj.width  = maxX - minX + 1;
-            obj.height = maxY - minY + 1;
         }
     }
     
@@ -498,14 +527,12 @@ public class Pix2GD {
         
         List<GDObject> gdObjects = convertToGDObjects(image, l, o);
         int[][] coverage = getCoverage(gdObjects, image.getWidth(), image.getHeight());
-        //System.out.println(Arrays.deepToString(coverage).replace("], [", "\n"));
         gdObjects = removeRedundantObjects(gdObjects, coverage);
         shrinkObjects(gdObjects, image);
         assignZOrder(gdObjects);
 
         long endTime = System.currentTimeMillis();
         float measuredTime = (endTime - startTime) / 1000.0f;
-        //System.out.println("time taken: " + measuredTime);
 
         
         StringBuilder sb = new StringBuilder("");
