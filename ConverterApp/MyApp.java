@@ -23,6 +23,9 @@ public class MyApp {
     private static int startZOrder = 1;
     private static int startColor = 1;
 
+    private static int tileWidth = 0;
+    private static int tileHeight = 0;  
+
     private int lastZOrderValue = startZOrder;
 
     private static String[] convertedData;
@@ -39,6 +42,9 @@ public class MyApp {
     private JSpinner colorSpinner;
     private JSpinner zLayerSpinner;
     private JSpinner zOrderSpinner;
+
+    private JSpinner tileWidthSpinner;
+    private JSpinner tileHeightSpinner;
 
     private JLabel imageLabel;
     private JLabel statusLabel;
@@ -114,6 +120,15 @@ public class MyApp {
         panel.add(createRow("Start Color:", colorSpinner = spinner(startColor, 1, 9999, 1)));
         panel.add(createRow("Z-Layer:", zLayerSpinner = spinner(zLayer, -5, 9, 2)));
         panel.add(createRow("Start Z-Order:", zOrderSpinner = spinner(startZOrder, -100, 100, 1)));
+
+        tileWidthSpinner = spinner(tileWidth, 0, Integer.MAX_VALUE, 8);
+        tileWidthSpinner.setToolTipText("Image will be processed in separate tiles of this width. Keep at 0 for no horizontal tiling");
+        panel.add(createRow("Tile Width:", tileWidthSpinner));
+
+        tileHeightSpinner = spinner(tileHeight, 0, Integer.MAX_VALUE, 8);
+        tileHeightSpinner.setToolTipText("Image will be processed in separate tiles of this height. Keep at 0 for no vertical tiling");
+        panel.add(createRow("Tile Height:", tileHeightSpinner));
+
         zOrderSpinner.addChangeListener(e -> preventZero(e));
         panel.add(Box.createVerticalStrut(25));
 
@@ -166,6 +181,7 @@ public class MyApp {
     private JPanel createRow(String label, JComponent field) {
         JPanel row = new JPanel(new BorderLayout(5, 0));
         JLabel l = new JLabel(label);
+        l.setToolTipText(field.getToolTipText());
         l.setPreferredSize(new Dimension(110, 25));
 
         row.add(l, BorderLayout.WEST);
@@ -262,9 +278,12 @@ public class MyApp {
             int startColorVal = (int) colorSpinner.getValue();
             int zLayerVal = (int) zLayerSpinner.getValue();
             int zOrderVal = (int) zOrderSpinner.getValue();
+            int tileWidthVal = (int) tileWidthSpinner.getValue();
+            int tileHeightVal = (int) tileHeightSpinner.getValue();
             Pix2GD converter = new Pix2GD();
 
-            convertedData = converter.run(filePath, scaleVal, startColorVal, zLayerVal, zOrderVal);
+            //convertedData = converter.run(filePath, scaleVal, startColorVal, zLayerVal, zOrderVal);
+            convertedData = converter.run(filePath, scaleVal, startColorVal, zLayerVal, zOrderVal, tileWidthVal, tileHeightVal);
             statusLabel.setText("Converted to " + convertedData[0] + " objects in " + convertedData[2] + " sec");
             exportBtn.setEnabled(true);
         }
@@ -299,6 +318,8 @@ public class MyApp {
             writer.write(zLayerSpinner.getValue() + ",");
             writer.write(zOrderSpinner.getValue() + ",");
             writer.write(directoryPath + ",");
+            writer.write(tileWidthSpinner.getValue() + ",");
+            writer.write(tileHeightSpinner.getValue() + ",");
 
             writer.close();
         }
@@ -326,6 +347,8 @@ public class MyApp {
             zLayer = Integer.parseInt(data[3]);
             startZOrder = Integer.parseInt(data[4]);
             directoryPath = data[5];
+            tileWidth = Integer.parseInt(data[6]);
+            tileHeight = Integer.parseInt(data[7]);
         }
         catch (Exception e) {
             e.printStackTrace();

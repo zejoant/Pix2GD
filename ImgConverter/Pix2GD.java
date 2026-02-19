@@ -180,145 +180,154 @@ public class Pix2GD {
         return gdObjects;
     }
 
-    public static List<GDObject> convertToGDObjects(BufferedImage image, int zLayer, int startingZOrder) {
+    public static List<GDObject> convertToGDObjectsTiled(BufferedImage image, int zLayer, int startingZOrder, int tileWidth, int tileHeight) {
         List<GDObject> gdObjects = new ArrayList<>();
-        int width  = image.getWidth();
-        int height = image.getHeight();
-        boolean[][] processed = new boolean[height][width];
+        int imgWidth  = image.getWidth();
+        int imgHeight = image.getHeight();
+        boolean[][] processed = new boolean[imgHeight][imgWidth];
 
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                if (processed[y][x]) continue;
+        if(tileHeight == 0) tileHeight = imgHeight;
+        if(tileWidth == 0) tileWidth = imgWidth;
 
-                // Read base pixel
-                int base = image.getRGB(x, y);
-                int baseAlpha = (base >>> 24) & 0xFF;
-                int baseRGB   = base & 0xFFFFFF;
+        for(int tx = 0; tx < (float)imgWidth/(float)tileWidth; tx++){
+            for(int ty = 0; ty < (float)imgHeight/(float)tileHeight; ty++){
+                int tWidth = tx*tileWidth+tileWidth;
+                int tHeight = ty*tileHeight+tileHeight;
+                for (int y = ty*tileHeight; y < tHeight && y < imgHeight; y++) {
+                    for (int x = tx*tileWidth; x < tWidth && x < imgWidth; x++) {
+                        if (processed[y][x]) continue;
 
-                // Skip transparent
-                if (baseAlpha == 0) {
-                    processed[y][x] = true;
-                    continue;
-                }
+                        // Read base pixel
+                        int base = image.getRGB(x, y);
+                        int baseAlpha = (base >>> 24) & 0xFF;
+                        int baseRGB   = base & 0xFFFFFF;
 
-                int rectWidth  = 1;
-                int rectHeight = 1;
-
-                boolean canExpandRight = true;
-                boolean canExpandLeft  = true;
-                boolean canExpandDown  = true;
-                boolean canExpandUp    = true;
-
-                int rightCount = 0;
-                boolean rightCheck;
-
-                //Expand Right (only necessary overlap)
-                while (canExpandRight && x + rectWidth < width) {
-                    rightCheck = false;
-                    int nx = x + rectWidth;
-                    for (int i = 0; i < rectHeight; i++) {
-                        int ny = y + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
-
-                        if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
-                            canExpandRight = false;
-                            break;
+                        // Skip transparent
+                        if (baseAlpha == 0) {
+                            processed[y][x] = true;
+                            continue;
                         }
-                        else if (!processed[ny][nx]) {
-                            rightCheck = true;
+
+                        int rectWidth  = 1;
+                        int rectHeight = 1;
+
+                        boolean canExpandRight = true;
+                        boolean canExpandLeft  = true;
+                        boolean canExpandDown  = true;
+                        boolean canExpandUp    = true;
+
+                        int rightCount = 0;
+                        boolean rightCheck;
+
+                        //Expand Right (only necessary overlap)
+                        while (canExpandRight && x + rectWidth < imgWidth && x + rectWidth < tWidth) {
+                            rightCheck = false;
+                            int nx = x + rectWidth;
+                            for (int i = 0; i < rectHeight; i++) {
+                                int ny = y + i;
+                                int p = image.getRGB(nx, ny);
+                                int alpha = (p >>> 24) & 0xFF;
+                                int rgb   = p & 0xFFFFFF;
+
+                                if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
+                                    canExpandRight = false;
+                                    break;
+                                }
+                                else if (!processed[ny][nx]) {
+                                    rightCheck = true;
+                                }
+                            }
+                            if (canExpandRight) {
+                                rectWidth++;
+                                if (rightCheck) rightCount = 0;
+                                else rightCount++;
+                            }
                         }
-                    }
-                    if (canExpandRight) {
-                        rectWidth++;
-                        if (rightCheck) rightCount = 0;
-                        else rightCount++;
-                    }
-                }
-                rectWidth -= rightCount;
+                        rectWidth -= rightCount;
 
-                //Expand Down
-                while (canExpandDown && y + rectHeight < height) {
-                    int ny = y + rectHeight;
-                    for (int i = 0; i < rectWidth; i++) {
-                        int nx = x + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
+                        //Expand Down
+                        while (canExpandDown && y + rectHeight < imgHeight && y + rectHeight < tHeight) {
+                            int ny = y + rectHeight;
+                            for (int i = 0; i < rectWidth; i++) {
+                                int nx = x + i;
+                                int p = image.getRGB(nx, ny);
+                                int alpha = (p >>> 24) & 0xFF;
+                                int rgb   = p & 0xFFFFFF;
 
-                        if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
-                            canExpandDown = false;
-                            break;
+                                if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
+                                    canExpandDown = false;
+                                    break;
+                                }
+                            }
+                            if (canExpandDown) {
+                                rectHeight++;
+                            }
                         }
-                    }
-                    if (canExpandDown) {
-                        rectHeight++;
-                    }
-                }
 
-                //Expand Left
-                while (canExpandLeft && x > 0) {
-                    int nx = x - 1;
-                    for (int i = 0; i < rectHeight; i++) {
-                        int ny = y + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
+                        //Expand Left
+                        while (canExpandLeft && x > tx*tileWidth) {
+                            int nx = x - 1;
+                            for (int i = 0; i < rectHeight; i++) {
+                                int ny = y + i;
+                                int p = image.getRGB(nx, ny);
+                                int alpha = (p >>> 24) & 0xFF;
+                                int rgb   = p & 0xFFFFFF;
 
-                        if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
-                            canExpandLeft = false;
-                            break;
+                                if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
+                                    canExpandLeft = false;
+                                    break;
+                                }
+                            }
+                            if (canExpandLeft) {
+                                rectWidth++;
+                                x--;
+                            }
                         }
-                    }
-                    if (canExpandLeft) {
-                        rectWidth++;
-                        x--;
-                    }
-                }
 
-                //Expand Up
-                while (canExpandUp && y > 0) {
-                    int ny = y - 1;
-                    for (int i = 0; i < rectWidth; i++) {
-                        int nx = x + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
+                        //Expand Up
+                        while (canExpandUp && y > ty*tileHeight) {
+                            int ny = y - 1;
+                            for (int i = 0; i < rectWidth; i++) {
+                                int nx = x + i;
+                                int p = image.getRGB(nx, ny);
+                                int alpha = (p >>> 24) & 0xFF;
+                                int rgb   = p & 0xFFFFFF;
 
-                        if (alpha == 0 || rgb != baseRGB) {
-                            canExpandUp = false;
-                            break;
+                                if (alpha == 0 || rgb != baseRGB) {
+                                    canExpandUp = false;
+                                    break;
+                                }
+                            }
+                            if (canExpandUp) {
+                                rectHeight++;
+                                y--;
+                            }
                         }
-                    }
-                    if (canExpandUp) {
-                        rectHeight++;
-                        y--;
-                    }
-                }
 
-                //Mark Processed
-                for (int dy = 0; dy < rectHeight; dy++) {
-                    for (int dx = 0; dx < rectWidth; dx++) {
-                        int p = image.getRGB(x + dx, y + dy);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
-                        if (alpha != 0 && rgb == baseRGB) {
-                            processed[y + dy][x + dx] = true;
+                        //Mark Processed
+                        for (int dy = 0; dy < rectHeight; dy++) {
+                            for (int dx = 0; dx < rectWidth; dx++) {
+                                int p = image.getRGB(x + dx, y + dy);
+                                int alpha = (p >>> 24) & 0xFF;
+                                int rgb   = p & 0xFFFFFF;
+                                if (alpha != 0 && rgb == baseRGB) {
+                                    processed[y + dy][x + dx] = true;
+                                }
+                            }
                         }
+
+                        // Convert RGB back to Color
+                        Color col = new Color(baseRGB);
+                        if (!uniqueColors.contains(col)) {
+                            uniqueColors.add(col);
+                        }
+
+                        int colorId = uniqueColors.indexOf(col);
+                        
+                        //Create Object
+                        gdObjects.add(new GDObject(x, y, rectWidth, rectHeight, colorId, zLayer, startingZOrder));
                     }
                 }
-
-                // Convert RGB back to Color
-                Color col = new Color(baseRGB);
-                if (!uniqueColors.contains(col)) {
-                    uniqueColors.add(col);
-                }
-
-                int colorId = uniqueColors.indexOf(col);
-                
-                //Create Object
-                gdObjects.add(new GDObject(x, y, rectWidth, rectHeight, colorId, zLayer, startingZOrder));
             }
         }
         return gdObjects;
@@ -520,12 +529,12 @@ public class Pix2GD {
         );
     }
 
-    public String[] run(String p, float s, int c, int l, int o) throws IOException{
+    public String[] run(String p, float s, int c, int l, int o, int tileWidth, int tileHeight) throws IOException{
         BufferedImage image = ImageIO.read(new File(p));
 
         long startTime = System.currentTimeMillis();
         
-        List<GDObject> gdObjects = convertToGDObjects(image, l, o);
+        List<GDObject> gdObjects = convertToGDObjectsTiled(image, l, o, tileWidth, tileHeight);
         int[][] coverage = getCoverage(gdObjects, image.getWidth(), image.getHeight());
         gdObjects = removeRedundantObjects(gdObjects, coverage);
         shrinkObjects(gdObjects, image);
