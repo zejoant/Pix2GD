@@ -1,6 +1,6 @@
 package ConverterApp;
 
-import ImgConverter.Pix2GD;
+import ImgConverter.*;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -54,7 +54,24 @@ public class MyApp {
     private BufferedImage loadedImage;
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(MyApp::new);
+        SwingUtilities.invokeLater(() -> {
+            try {
+                Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+                    e.printStackTrace();
+                    JOptionPane.showMessageDialog(null,
+                            "Error: " + e,
+                            "Unhandled Exception",
+                            JOptionPane.ERROR_MESSAGE);
+                });
+                new MyApp();
+            } catch (Exception e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(null,
+                        "Error starting app: " + e,
+                        "Startup Error",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
     }
 
     public MyApp() {
@@ -280,7 +297,7 @@ public class MyApp {
             int zOrderVal = (int) zOrderSpinner.getValue();
             int tileWidthVal = (int) tileWidthSpinner.getValue();
             int tileHeightVal = (int) tileHeightSpinner.getValue();
-            Pix2GD converter = new Pix2GD();
+            ImgConverter.Pix2GD2 converter = new ImgConverter.Pix2GD2();
 
             //convertedData = converter.run(filePath, scaleVal, startColorVal, zLayerVal, zOrderVal);
             convertedData = converter.run(filePath, scaleVal, startColorVal, zLayerVal, zOrderVal, tileWidthVal, tileHeightVal);

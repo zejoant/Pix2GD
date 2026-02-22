@@ -75,11 +75,11 @@ public class WriteToGD {
         byte[] newSave = encodeSaveFile(newXml);
 
         // Create backup
-        System.out.println("Creating backup: CCLocalLevels2.dat");
+        //System.out.println("Creating backup: CCLocalLevels2.dat");
         Files.copy(filePath, backupFilePath, StandardCopyOption.REPLACE_EXISTING);
         
         // Write new save
-        System.out.println("Writing to the level " + ReadFromGD.extractLevelName(newXml));
+        //System.out.println("Writing to the level " + ReadFromGD.extractLevelName(newXml));
         Files.write(filePath, newSave);
     }
 }

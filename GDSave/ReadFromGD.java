@@ -76,7 +76,7 @@ public class ReadFromGD {
 
     public static String extractLevel(String xml) {
 
-        System.out.println("Reading from the level " + extractLevelName(xml));
+        //System.out.println("Reading from the level " + extractLevelName(xml));
 
         // Match <k>k4</k><s>BASE64</s>, allowing whitespace/newlines
         Pattern pattern = Pattern.compile(
@@ -129,11 +129,27 @@ public class ReadFromGD {
         return new String(gzip.readAllBytes(), StandardCharsets.UTF_8);
     }
 
-    public static void main(String[] args) throws Exception{
-        readFromGD();
+    public static int getMaxLinked() throws Exception {
+        int maxLinkID = 0;
+        String data = readFromGD();
+        String[] objects = data.split(";");
+        for (int i = 1; i < objects.length; i++) {
+            String[] props = objects[i].split(",");
+            for (int j = 0; j + 1 < props.length; j += 2) {
+                int key = Integer.parseInt(props[j]);
+                if (key == 108) {
+                    int value = Integer.parseInt(props[j + 1]);
+                    if (value > maxLinkID) {
+                        maxLinkID = value;
+                    }
+                    break;
+                }
+            }
+        }
+        return maxLinkID;
     }
 
-    public static void readFromGD() throws Exception{
+    public static String readFromGD() throws Exception{
         Path filePath = Path.of(System.getenv("LOCALAPPDATA"), "GeometryDash", "CCLocalLevels.dat");
 
         // Read file
@@ -142,7 +158,7 @@ public class ReadFromGD {
         // Decode file data
         String xml = decodeSaveFile(data);
 
-        System.out.println("Reading from the level " + ReadFromGD.extractLevelName(xml));
+        //System.out.println("Reading from the level " + ReadFromGD.extractLevelName(xml));
         
         //get only the top level
         String levelBase64 = ReadFromGD.extractLevel(xml);
@@ -150,6 +166,7 @@ public class ReadFromGD {
         //decode level data
         String decoded = decodeLevel(levelBase64, false);
 
-        System.out.println(decoded);
+        //System.out.println(decoded);
+        return decoded;
     }
 }

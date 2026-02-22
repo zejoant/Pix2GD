@@ -12,142 +12,15 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.Locale;
 
-public class Pix2GD {
+public class Pix2GD2 {
     static List<Color> uniqueColors = new ArrayList<>();
-
-    public static List<GDObject> convertToGDObjectsSingleColor(BufferedImage image, int zLayer, int startingZOrder) {
-        List<GDObject> gdObjects = new ArrayList<>();
-        int width  = image.getWidth();
-        int height = image.getHeight();
-        boolean[][] processed = new boolean[height][width];
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                if (processed[y][x]) continue;
-
-                // Read base pixel
-                int base = image.getRGB(x, y);
-                int baseAlpha = (base >>> 24) & 0xFF;
-                int baseRGB   = base & 0xFFFFFF;
-
-                // Skip transparent
-                if (baseAlpha == 0) {
-                    processed[y][x] = true;
-                    continue;
-                }
-
-                int rectWidth  = 1;
-                int rectHeight = 1;
-
-                boolean canExpandRight = true;
-                boolean canExpandLeft  = true;
-                boolean canExpandDown  = true;
-                boolean canExpandUp    = true;
-
-                //Expand Right (only necessary overlap)
-                while (canExpandRight && x + rectWidth < width) {
-                    int nx = x + rectWidth;
-                    for (int i = 0; i < rectHeight; i++) {
-                        int ny = y + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
-
-                        if (alpha == 0 || rgb != baseRGB) {
-                            canExpandRight = false;
-                            break;
-                        }
-                    }
-                    if (canExpandRight) {
-                        rectWidth++;
-                    }
-                }
-
-                //Expand Down
-                while (canExpandDown && y + rectHeight < height) {
-                    int ny = y + rectHeight;
-                    for (int i = 0; i < rectWidth; i++) {
-                        int nx = x + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
-
-                        if (alpha == 0 || rgb != baseRGB) {
-                            canExpandDown = false;
-                            break;
-                        }
-                    }
-                    if (canExpandDown) {
-                        rectHeight++;
-                    }
-                }
-
-                //Expand Left
-                while (canExpandLeft && x > 0) {
-                    int nx = x - 1;
-                    for (int i = 0; i < rectHeight; i++) {
-                        int ny = y + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
-
-                        if (alpha == 0 || rgb != baseRGB) {
-                            canExpandLeft = false;
-                            break;
-                        }
-                    }
-                    if (canExpandLeft) {
-                        rectWidth++;
-                        x--;
-                    }
-                }
-
-                //Expand Up
-                while (canExpandUp && y > 0) {
-                    int ny = y - 1;
-                    for (int i = 0; i < rectWidth; i++) {
-                        int nx = x + i;
-                        int p = image.getRGB(nx, ny);
-                        int alpha = (p >>> 24) & 0xFF;
-                        int rgb   = p & 0xFFFFFF;
-
-                        if (alpha == 0 || rgb != baseRGB) {
-                            canExpandUp = false;
-                            break;
-                        }
-                    }
-                    if (canExpandUp) {
-                        rectHeight++;
-                        y--;
-                    }
-                }
-
-                //Mark Processed
-                for (int dy = 0; dy < rectHeight; dy++) {
-                    for (int dx = 0; dx < rectWidth; dx++) {
-                        processed[y + dy][x + dx] = true;
-                    }
-                }
-
-                // Convert RGB back to Color
-                Color col = new Color(baseRGB);
-                if (!uniqueColors.contains(col)) {
-                    uniqueColors.add(col);
-                }
-                
-                //Create Object
-                int colorId = uniqueColors.indexOf(col);
-                gdObjects.add(new GDObject(x, y, rectWidth, rectHeight, colorId, zLayer, startingZOrder, -1));
-            }
-        }
-        return gdObjects;
-    }
 
     public static List<GDObject> convertToGDObjectsTiled(BufferedImage image, int zLayer, int startingZOrder, int tileWidth, int tileHeight, int maxLinked) {
         List<GDObject> gdObjects = new ArrayList<>();
         int imgWidth  = image.getWidth();
         int imgHeight = image.getHeight();
         boolean[][] processed = new boolean[imgHeight][imgWidth];
+        int[][] cov = new int[imgHeight][imgWidth];
 
         if(tileHeight == 0) tileHeight = imgHeight;
         if(tileWidth == 0) tileWidth = imgWidth;
@@ -183,6 +56,12 @@ public class Pix2GD {
                         int revertCount = 0;
                         boolean usefulCheck;
 
+                        int minInsertIndex = 0;
+
+                        if(cov[y][x] > minInsertIndex){
+                            minInsertIndex = cov[y][x];
+                        }
+
                         //Expand Right (only necessary overlap)
                         while (canExpandRight && x + rectWidth < imgWidth && x + rectWidth < tWidth) {
                             usefulCheck = false;
@@ -195,6 +74,9 @@ public class Pix2GD {
 
                                 if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
                                     canExpandRight = false;
+                                    if(cov[ny][nx] > minInsertIndex){
+                                        minInsertIndex = cov[ny][nx];
+                                    }
                                     break;
                                 }
                                 else if (!processed[ny][nx] && rgb == baseRGB) {
@@ -210,7 +92,7 @@ public class Pix2GD {
                         rectWidth -= revertCount;
                         revertCount = 0;
 
-                        //Expand Down
+                        //Expand Down (only necessary overlap)
                         while (canExpandDown && y + rectHeight < imgHeight && y + rectHeight < tHeight) {
                             usefulCheck = false;
                             int ny = y + rectHeight;
@@ -222,6 +104,9 @@ public class Pix2GD {
 
                                 if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
                                     canExpandDown = false;
+                                    if(cov[ny][nx] > minInsertIndex){
+                                        minInsertIndex = cov[ny][nx];
+                                    }
                                     break;
                                 }
                                 else if (!processed[ny][nx] && rgb == baseRGB) {
@@ -237,9 +122,10 @@ public class Pix2GD {
                         rectHeight -= revertCount;
                         revertCount = 0;
 
-                        //Expand Left
-                        while (canExpandLeft && x > tx*tileWidth) {
-                            int nx = x - 1;
+                        //Expand Right again (only necessary overlap)
+                        while (canExpandRight && x + rectWidth < imgWidth && x + rectWidth < tWidth) {
+                            usefulCheck = false;
+                            int nx = x + rectWidth;
                             for (int i = 0; i < rectHeight; i++) {
                                 int ny = y + i;
                                 int p = image.getRGB(nx, ny);
@@ -247,8 +133,51 @@ public class Pix2GD {
                                 int rgb   = p & 0xFFFFFF;
 
                                 if (alpha == 0 || (processed[ny][nx] && rgb != baseRGB)) {
-                                    canExpandLeft = false;
+                                    canExpandRight = false;
+                                    if(cov[ny][nx] > minInsertIndex){
+                                        minInsertIndex = cov[ny][nx];
+                                    }
                                     break;
+                                }
+                                else if (!processed[ny][nx] && rgb == baseRGB) {
+                                    usefulCheck = true;
+                                }
+                            }
+                            if (canExpandRight) {
+                                rectWidth++;
+                                if (usefulCheck) revertCount = 0;
+                                else revertCount++;
+                            }
+                        }
+                        rectWidth -= revertCount;
+                        revertCount = 0;
+
+                        //Expand Left
+                        int insertIndex = gdObjects.size() + 1; //index the object will be inserted at
+                        while (canExpandLeft && x > tx*tileWidth) {
+                            int nx = x - 1;
+                            //check every pixel in the rects height
+                            for (int i = 0; i < rectHeight; i++) {
+                                int ny = y + i;
+                                int p = image.getRGB(nx, ny);
+                                int alpha = (p >>> 24) & 0xFF;
+                                int rgb   = p & 0xFFFFFF;
+
+                                if (alpha == 0) {
+                                    canExpandLeft = false;
+                                }
+                                else if(processed[ny][nx] && rgb != baseRGB){
+                                    if(minInsertIndex >= cov[ny][nx]){
+                                        canExpandLeft = false;
+                                    }
+                                    else if(cov[ny][nx] < insertIndex){
+                                        insertIndex = cov[ny][nx];
+                                    }
+                                }
+                                else if(rgb == baseRGB){
+                                    if(cov[ny][nx] > minInsertIndex){
+                                        minInsertIndex = cov[ny][nx]; 
+                                    }
                                 }
                             }
                             if (canExpandLeft) {
@@ -256,6 +185,10 @@ public class Pix2GD {
                                 x--;
                             }
                         }
+
+                        /*if(gdObjects.size() == 6){
+                            System.out.println(minInsertIndex + ", " + insertIndex);
+                        }*/
 
                         //Expand Up
                         while (canExpandUp && y > ty*tileHeight) {
@@ -266,9 +199,21 @@ public class Pix2GD {
                                 int alpha = (p >>> 24) & 0xFF;
                                 int rgb   = p & 0xFFFFFF;
 
-                                if (alpha == 0 || rgb != baseRGB) {
+                                if (alpha == 0) {
                                     canExpandUp = false;
-                                    break;
+                                }
+                                else if(processed[ny][nx] && rgb != baseRGB){
+                                    if(minInsertIndex >= cov[ny][nx]){
+                                        canExpandUp = false;
+                                    }
+                                    else if(cov[ny][nx] < insertIndex){
+                                        insertIndex = cov[ny][nx];
+                                    }
+                                }
+                                else if(rgb == baseRGB){
+                                    if(cov[ny][nx] > minInsertIndex){
+                                        minInsertIndex = cov[ny][nx];
+                                    }
                                 }
                             }
                             if (canExpandUp) {
@@ -277,17 +222,42 @@ public class Pix2GD {
                             }
                         }
 
+                        /*if(gdObjects.size() == 6){
+                            System.out.println(minInsertIndex + ", " + insertIndex);
+                        }*/
+                        
+                        for(int i = 0; i < cov.length; i++){
+                           for(int j = 0; j < cov[i].length; j++){
+                                if(cov[i][j] >= insertIndex){
+                                    cov[i][j]++;
+                                }
+                            } 
+                        }
                         //Mark Processed
                         for (int dy = 0; dy < rectHeight; dy++) {
                             for (int dx = 0; dx < rectWidth; dx++) {
                                 int p = image.getRGB(x + dx, y + dy);
                                 int alpha = (p >>> 24) & 0xFF;
                                 int rgb   = p & 0xFFFFFF;
-                                if (alpha != 0 && rgb == baseRGB) {
+                                if (alpha != 0 && rgb == baseRGB && insertIndex > cov[y + dy][x + dx]) {
                                     processed[y + dy][x + dx] = true;
+                                    //if(gdObjects.size() == 6){
+                                    //    System.out.print("#  ");
+                                    //}
+                                }
+                                //else if(gdObjects.size() == 6){
+                                //    System.out.print("-  ");
+                                //}
+                                if(insertIndex > cov[y + dy][x + dx]){
+                                    cov[y + dy][x + dx] = insertIndex;
+
                                 }
                             }
+                            //if(gdObjects.size() == 6){
+                            //    System.out.print("\n");
+                            //}
                         }
+
 
                         // Convert RGB back to Color
                         Color col = new Color(baseRGB);
@@ -298,7 +268,7 @@ public class Pix2GD {
                         int colorId = uniqueColors.indexOf(col);
                         
                         //Create Object
-                        gdObjects.add(new GDObject(x, y, rectWidth, rectHeight, colorId, zLayer, startingZOrder, maxLinked));
+                        gdObjects.add(insertIndex-1, new GDObject(x, y, rectWidth, rectHeight, colorId, zLayer, startingZOrder, maxLinked));
                     }
                 }
             }
@@ -511,7 +481,7 @@ public class Pix2GD {
         List<GDObject> gdObjects = convertToGDObjectsTiled(image, l, o, tileWidth, tileHeight, maxLinked);
         int[][] coverage = getCoverage(gdObjects, image.getWidth(), image.getHeight());
         gdObjects = removeRedundantObjects(gdObjects, coverage);
-        //shrinkObjects(gdObjects, image);
+        shrinkObjects(gdObjects, image);
         assignZOrder(gdObjects);
 
         long endTime = System.currentTimeMillis();

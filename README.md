@@ -4,7 +4,7 @@ Pix2GD Converter is a Java application for importing pixel art images into Geome
 
 ## Notes
 
-This is a work in progress.
+Only tested on Windows.
 
 ## How to Use
 1. Have Geometry Dash installed.
