@@ -191,8 +191,6 @@ void OptionsPopup::onBrowse(CCObject*) {
 
                 //FLAlertLayer::create("Selected File", path.string(), "OK")->show();
             } 
-            else else geode::log::error("Failed to load image!: {}", result.unwrapErr());
         }
-        else else geode::log::error("Failed to load image!!: {}", result.unwrapErr());
     });
 }
