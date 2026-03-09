@@ -39,11 +39,12 @@ bool OptionsPopup::init(std::string const& value) {
     rightPanel->addChild(btn1);
 
     // preview sprite
-    imagePreview = LazySprite::create({ rightPanel->getContentWidth(), rightPanel->getContentHeight() }, false);
-    imagePreview->setAutoResize(true);
-    rightPanel->addChild(imagePreview);
-    //rightPanel->addChildAtPosition(imagePreview, Anchor::Center);
-    
+    colorLayer = NineSlice::create("square02b_001.png");
+    colorLayer->setColor({108, 60, 36});
+    //colorLayer = CCLayerColor::create({ 108, 60, 36, 255 });
+    colorLayer->setContentSize({ rightPanel->getContentWidth(), rightPanel->getContentHeight() * 0.7f });
+    rightPanel->addChild(colorLayer);
+
     // import button
     auto spr2 = ButtonSprite::create("Import");
     auto btn2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(OptionsPopup::onImport));
@@ -53,60 +54,105 @@ bool OptionsPopup::init(std::string const& value) {
     auto leftPanelLabel = CCLabelBMFont::create("Settings", "bigFont.fnt");
     leftPanel->addChild(leftPanelLabel);
 
+    // scale/color panel
+    auto scolPanel = CCMenu::create();
+    scolPanel->setContentSize({ leftPanel->getContentWidth(), 30.f }); // match other inputs
+    scolPanel->setLayout(RowLayout::create()->setGap(5));
+    leftPanel->addChild(scolPanel);
+
     // scale input
-    auto scaleInput = TextInput::create(leftPanel->getContentWidth() * 0.5f, "");
+    auto scaleInput = TextInput::create(scolPanel->getContentWidth() * 0.5f, "");
     scaleInput->setCommonFilter(CommonFilter::Float);
     scaleInput->setLabel("Scale");
     scaleInput->setScale(.7f);
-    scaleInput->setCallback([this](auto const& val) {
-        if (val.empty() || val == "-" || val == ".")
-            return;
-        OptionsPopup::scale = std::stof(val); 
+    scaleInput->setCallback([this, scaleInput](auto const& val) {
+        if (val.empty() || val == "-" || val == ".") return;
+        float v = std::stof(val);
+        auto str = val;
+        if (v < 0.f) {
+            v = 0.f;
+            str = fmt::format("{}", v);
+            scaleInput->setString(str, false);
+        }
+        OptionsPopup::scale = v;
+        Mod::get()->setSavedValue<std::string>("scale", str);
     });
-    scaleInput->setString("1.0", true);
-    leftPanel->addChild(scaleInput);
+    scaleInput->setString(Mod::get()->getSavedValue<std::string>("scale", "0.25"), true);
+    scolPanel->addChild(scaleInput);
 
     // starting color id input
-    auto colorInput = TextInput::create(leftPanel->getContentWidth() * 0.5f, "");
+    auto colorInput = TextInput::create(scolPanel->getContentWidth() * 0.5f, "");
     colorInput->setCommonFilter(CommonFilter::Int);
     colorInput->setLabel("Starting Color ID");
     colorInput->setScale(.7f);
     //colorInput->setCallback([this](auto const& val) {OptionsPopup::startColorID = std::stoi(val); });
-    colorInput->setCallback([this](auto const& val) {
-        if (val.empty() || val == "-" || val == ".")
-            return;
-        OptionsPopup::startColorID = std::stoi(val);
+    colorInput->setCallback([this, colorInput](auto const& val) {
+        if (val.empty() || val == "-" || val == ".") return;
+        float v = std::stoi(val);
+        auto str = val;
+        if (v < 1) {
+            v = 1;
+            str = fmt::format("{}", v);
+            colorInput->setString(str, false);
+        }
+        OptionsPopup::startColorID = v;
+        Mod::get()->setSavedValue<std::string>("color-id", str);
     });
-    colorInput->setString("1", true);
-    leftPanel->addChild(colorInput);
+    colorInput->setString(Mod::get()->getSavedValue<std::string>("color-id", "1"), true);
+    scolPanel->addChild(colorInput);
+
+    // layer/order panel
+    auto layerPanel = CCMenu::create();
+    layerPanel->setContentSize({ leftPanel->getContentWidth(), 30.f }); // match other inputs
+    layerPanel->setLayout(RowLayout::create()->setGap(5));
+    leftPanel->addChild(layerPanel);
 
     // starting z-order input
-    auto zOrderInput = TextInput::create(leftPanel->getContentWidth() * 0.5f, "");
+    auto zOrderInput = TextInput::create(layerPanel->getContentWidth() * 0.5f, "");
     zOrderInput->setCommonFilter(CommonFilter::Int);
     zOrderInput->setLabel("Starting Z-Order");
     zOrderInput->setScale(.7f);
     //zOrderInput->setCallback([this](auto const& val) {OptionsPopup::startingZOrder = std::stoi(val); });
-    zOrderInput->setCallback([this](auto const& val) {
-        if (val.empty() || val == "-" || val == ".")
-            return;
-        OptionsPopup::startingZOrder = std::stoi(val);
+    zOrderInput->setCallback([this, zOrderInput](auto const& val) {
+        if (val.empty() || val == "-" || val == ".") return;
+        float v = std::stoi(val);
+        auto str = val;
+        if (v < -100) {
+            v = -100;
+            str = fmt::format("{}", v);
+            zOrderInput->setString(str, false);
+        }
+        else if (v > 50) {
+            v = 50;
+            str = fmt::format("{}", v);
+            zOrderInput->setString(str, false);
+        }
+        OptionsPopup::startingZOrder = v;
+        Mod::get()->setSavedValue<std::string>("z-order", str);
     });
-    zOrderInput->setString("-7", true);
-    leftPanel->addChild(zOrderInput);
+    zOrderInput->setString(Mod::get()->getSavedValue<std::string>("z-order", "-7"), true);
+    layerPanel->addChild(zOrderInput);
 
     // z-layer input
-    auto zLayerInput = TextInput::create(leftPanel->getContentWidth() * 0.5f, "");
+    auto zLayerInput = TextInput::create(layerPanel->getContentWidth() * 0.5f, "");
     zLayerInput->setCommonFilter(CommonFilter::Int);
-    zLayerInput->setLabel("Z-Layer");
+    zLayerInput->setLabel("Editor Layer");
     zLayerInput->setScale(.7f);
     //zLayerInput->setCallback([this](auto const& val) {OptionsPopup::zLayer = std::stoi(val); });
-    zLayerInput->setCallback([this](auto const& val) {
-        if (val.empty() || val == "-" || val == ".")
-            return;
-        OptionsPopup::zLayer = std::stoi(val);
+    zLayerInput->setCallback([this, zLayerInput](auto const& val) {
+        if (val.empty() || val == "-" || val == ".") return;
+        float v = std::stoi(val);
+        auto str = val;
+        if (v < 0) {
+            v = 0;
+            str = fmt::format("{}", v);
+            zLayerInput->setString(str, false);
+        }
+        OptionsPopup::zLayer = v;
+        Mod::get()->setSavedValue<std::string>("editor-layer", str);
     });
-    zLayerInput->setString("5", true);
-    leftPanel->addChild(zLayerInput);
+    zLayerInput->setString(Mod::get()->getSavedValue<std::string>("editor-layer", "0"), true);
+    layerPanel->addChild(zLayerInput);
 
     //tile size panel
     auto tilePanel = CCMenu::create();
@@ -120,12 +166,19 @@ bool OptionsPopup::init(std::string const& value) {
     tWidthInput->setLabel("Tile Width");
     tWidthInput->setScale(.7f);
     //tWidthInput->setCallback([this](auto const& val) {OptionsPopup::tileWidth = std::stoi(val); });
-    tWidthInput->setCallback([this](auto const& val) {
-        if (val.empty() || val == "-" || val == ".")
-            return;
-        OptionsPopup::tileWidth = std::stoi(val);
+    tWidthInput->setCallback([this, tWidthInput](auto const& val) {
+        if (val.empty() || val == "-" || val == ".") return;
+        float v = std::stoi(val);
+        auto str = val;
+        if (v < 0) {
+            v = 0;
+            str = fmt::format("{}", v);
+            tWidthInput->setString(str, false);
+        }
+        OptionsPopup::tileWidth = v;
+        Mod::get()->setSavedValue<std::string>("tile-width", str);
     });
-    tWidthInput->setString("0", true);
+    tWidthInput->setString(Mod::get()->getSavedValue<std::string>("tile-width", "0"), true);
     tilePanel->addChild(tWidthInput);
 
     // tile height input
@@ -134,16 +187,25 @@ bool OptionsPopup::init(std::string const& value) {
     tHeightInput->setLabel("Tile Height");
     tHeightInput->setScale(.7f);
     //tHeightInput->setCallback([this](auto const& val) {OptionsPopup::tileHeight = std::stoi(val); });
-    tHeightInput->setCallback([this](auto const& val) {
-        if (val.empty() || val == "-" || val == ".")
-            return;
-        OptionsPopup::tileHeight = std::stoi(val);
+    tHeightInput->setCallback([this, tHeightInput](auto const& val) {
+        if (val.empty() || val == "-" || val == ".") return;
+        float v = std::stoi(val);
+        auto str = val;
+        if (v < 0) {
+            v = 0;
+            str = fmt::format("{}", v);
+            tHeightInput->setString(str, false);
+        }
+        OptionsPopup::tileHeight = v;
+        Mod::get()->setSavedValue<std::string>("tile-height", str);
     });
-    tHeightInput->setString("0", true);
+    tHeightInput->setString(Mod::get()->getSavedValue<std::string>("tile-height", "0"), true);
     tilePanel->addChild(tHeightInput);
 
 
     tilePanel->updateLayout();
+    scolPanel->updateLayout();
+    layerPanel->updateLayout();
     leftPanel->updateLayout();
     rightPanel->updateLayout();
 
@@ -178,16 +240,28 @@ void OptionsPopup::onBrowse(CCObject*) {
         if (result.isOk()) {
             auto opt = result.unwrap();
             if (opt) {
+                //i want to access rightPanel here. how do i get it here
+                if (this->colorLayer->getChildByID("image-preview")) {
+                    this->colorLayer->removeChild(this->imagePreview, true);
+                }
+                this->imagePreview = LazySprite::create({ this->colorLayer->getContentWidth()*0.9f, this->colorLayer->getContentHeight()*0.9f }, false);
+                this->imagePreview->setAutoResize(true);
+                this->imagePreview->setID("image-preview");
+                //this->colorLayer->addChild(this->imagePreview);
+                this->colorLayer->addChildAtPosition(this->imagePreview, Anchor::Center, ccp(0.0f, 0.0f));
+
                 auto path = opt.value();
                 OptionsPopup::imagePath = path;
-                imagePreview->setLoadCallback([sprite = imagePreview](geode::Result<void, std::string> result) {
+
+                this->imagePreview->setLoadCallback([sprite = this->imagePreview](geode::Result<void, std::string> result) {
                     if (result.isOk()) {
                         if (auto tex = sprite->getTexture())
                             tex->setAliasTexParameters(); // set sharp pixels
                     }
                     else geode::log::error("Failed to load image: {}", result.unwrapErr());
                 });
-                imagePreview->loadFromFile(path);
+                this->imagePreview->loadFromFile(path);
+                //this->rightPanel->updateLayout();
 
                 //FLAlertLayer::create("Selected File", path.string(), "OK")->show();
             } 

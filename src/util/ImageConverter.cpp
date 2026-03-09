@@ -574,8 +574,9 @@ void ImageConverter::run(std::string path, float scale, int startColorID, int st
         gameObject->m_zOrder = zOrderPassedZero ? o.zOrder + 1 : o.zOrder;
         gameObject->updateCustomScaleX(o.width * scale);
         gameObject->updateCustomScaleY(o.height * scale);
-        gameObject->setCustomZLayer(o.zLayer);
-
+        gameObject->setCustomZLayer(5);
+        gameObject->m_editorLayer = o.zLayer;
+        
         if (groupedObjects.find(o.linkID) == groupedObjects.end()) {
             groupedObjects[o.linkID] = cocos2d::CCArray::create();
             groupedObjects[o.linkID]->retain();

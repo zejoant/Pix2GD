@@ -12,7 +12,10 @@ protected:
     int tileWidth;
     int tileHeight;
 
-    LazySprite* imagePreview;
+    //CCMenu* rightPanel = nullptr;
+    //CCLayerColor* colorLayer = nullptr;
+    NineSlice* colorLayer = nullptr;
+    LazySprite* imagePreview = nullptr;
     std::filesystem::path imagePath;
 
     bool init(std::string const& value);
