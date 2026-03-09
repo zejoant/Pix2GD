@@ -105,15 +105,15 @@ std::vector<GDObject> ImageConverter::tileToGDObjects(const std::vector<std::vec
             revertCount = 0;
 
             //expansion down and right at the same time
-            boolean canExpandX = true;
-            boolean canExpandY = true;
+            bool canExpandX = true;
+            bool canExpandY = true;
             int revertX = 0;
             int revertY = 0;
             while (true) {
-                boolean grew = false;
+                bool grew = false;
 
                 canExpandX = false;
-                boolean usefulCheckX = false;
+                bool usefulCheckX = false;
                 if (x + rectWidth < tw) {
                     canExpandX = true;
                     int nx = x + rectWidth;
@@ -135,7 +135,7 @@ std::vector<GDObject> ImageConverter::tileToGDObjects(const std::vector<std::vec
                 }
 
                 canExpandY = false;
-                boolean usefulCheckY = false;
+                bool usefulCheckY = false;
                 if (y + rectHeight < th) {
                     canExpandY = true;
                     int ny = y + rectHeight;
