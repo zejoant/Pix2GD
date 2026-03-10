@@ -11,6 +11,7 @@ protected:
     int zLayer;
     int tileWidth;
     int tileHeight;
+    bool createColTriggers = false;
 
     //CCMenu* rightPanel = nullptr;
     //CCLayerColor* colorLayer = nullptr;
@@ -24,5 +25,5 @@ public:
     static OptionsPopup* create(std::string const& text);
     void onBrowse(CCObject* sender);
     void onImport(CCObject* sender);
-    void renderImage(std::filesystem::path path);
+    void renderImage(const std::filesystem::path& path);
 };

@@ -4,6 +4,8 @@ using namespace geode::prelude;
 #include <ui/OptionsPopup.hpp>
 #include <util/ImageConverter.hpp>
 
+#include <Geode/utils/general.hpp>
+
 bool OptionsPopup::init(std::string const& value) {
     float popupW = 400.f;
     float popupH = 280.f;
@@ -67,7 +69,8 @@ bool OptionsPopup::init(std::string const& value) {
     scaleInput->setScale(.7f);
     scaleInput->setCallback([this, scaleInput](auto const& val) {
         if (val.empty() || val == "-" || val == ".") return;
-        float v = std::stof(val);
+        //float v = std::stof(val);
+        float v = numFromString<float>(val).unwrapOr(0.25);
         auto str = val;
         if (v < 0.f) {
             v = 0.f;
@@ -87,7 +90,8 @@ bool OptionsPopup::init(std::string const& value) {
     colorInput->setScale(.7f);
     colorInput->setCallback([this, colorInput](auto const& val) {
         if (val.empty() || val == "-" || val == ".") return;
-        float v = std::stoi(val);
+        //float v = std::stoi(val);
+        int v = numFromString<int>(val).unwrapOr(1);
         auto str = val;
         if (v < 1) {
             v = 1;
@@ -113,7 +117,8 @@ bool OptionsPopup::init(std::string const& value) {
     zOrderInput->setScale(.7f);
     zOrderInput->setCallback([this, zOrderInput](auto const& val) {
         if (val.empty() || val == "-" || val == ".") return;
-        float v = std::stoi(val);
+        //float v = std::stoi(val);
+        int v = numFromString<int>(val).unwrapOr(-7);
         auto str = val;
         if (v < -100) {
             v = -100;
@@ -138,7 +143,8 @@ bool OptionsPopup::init(std::string const& value) {
     zLayerInput->setScale(.7f);
     zLayerInput->setCallback([this, zLayerInput](auto const& val) {
         if (val.empty() || val == "-" || val == ".") return;
-        float v = std::stoi(val);
+        //float v = std::stoi(val);
+        int v = numFromString<int>(val).unwrapOr(0);
         auto str = val;
         if (v < 0) {
             v = 0;
@@ -164,7 +170,8 @@ bool OptionsPopup::init(std::string const& value) {
     tWidthInput->setScale(.7f);
     tWidthInput->setCallback([this, tWidthInput](auto const& val) {
         if (val.empty() || val == "-" || val == ".") return;
-        float v = std::stoi(val);
+        //float v = std::stoi(val);
+        int v = numFromString<int>(val).unwrapOr(0);
         auto str = val;
         if (v < 0) {
             v = 0;
@@ -184,7 +191,8 @@ bool OptionsPopup::init(std::string const& value) {
     tHeightInput->setScale(.7f);
     tHeightInput->setCallback([this, tHeightInput](auto const& val) {
         if (val.empty() || val == "-" || val == ".") return;
-        float v = std::stoi(val);
+        //float v = std::stoi(val);
+        int v = numFromString<int>(val).unwrapOr(0);
         auto str = val;
         if (v < 0) {
             v = 0;
@@ -196,6 +204,31 @@ bool OptionsPopup::init(std::string const& value) {
     });
     tHeightInput->setString(Mod::get()->getSavedValue<std::string>("tile-height", "0"), true);
     tilePanel->addChild(tHeightInput);
+
+    // toggler and its label panel
+    auto colTrigPanel = CCMenu::create();
+    colTrigPanel->setContentSize({ leftPanel->getContentWidth(), 30.f });
+    colTrigPanel->setLayout(RowLayout::create()->setGap(5)->setAxisAlignment(AxisAlignment::Start));
+    leftPanel->addChild(colTrigPanel);
+
+    auto colTrigToggler = CCMenuItemExt::createTogglerWithStandardSprites(
+        1.f,
+        [this](CCMenuItemToggler* btn) {
+            OptionsPopup::createColTriggers = !btn->isToggled();
+            Mod::get()->setSavedValue<bool>("create-col-trigs", OptionsPopup::createColTriggers);
+        }
+    );
+    colTrigPanel->addChild(colTrigToggler);
+    OptionsPopup::createColTriggers = Mod::get()->getSavedValue<bool>("create-col-trigs", false);
+    colTrigToggler->toggle(OptionsPopup::createColTriggers);
+    colTrigToggler->updateSprite();
+
+    // label
+    auto colTrigLabel = CCLabelBMFont::create("Create Color Triggers", "goldFont.fnt");
+    colTrigPanel->addChild(colTrigLabel);
+    colTrigPanel->updateLayout();
+    colTrigLabel->setScale(0.4f);
+    //colTrigLabel->limitLabelWidth()
 
 
     tilePanel->updateLayout();
@@ -219,7 +252,7 @@ OptionsPopup* OptionsPopup::create(std::string const& text) {
 }
 
 void OptionsPopup::onImport(CCObject*) {
-    ImageConverter::run(OptionsPopup::imagePath.string(), OptionsPopup::scale, OptionsPopup::startColorID, OptionsPopup::startingZOrder, OptionsPopup::zLayer, OptionsPopup::tileWidth, OptionsPopup::tileHeight);
+    ImageConverter::run(OptionsPopup::imagePath.string(), OptionsPopup::scale, OptionsPopup::startColorID, OptionsPopup::startingZOrder, OptionsPopup::zLayer, OptionsPopup::tileWidth, OptionsPopup::tileHeight, OptionsPopup::createColTriggers);
     this->onClose(nullptr);
 }
 
@@ -244,7 +277,7 @@ void OptionsPopup::onBrowse(CCObject*) {
     });
 }
 
-void OptionsPopup::renderImage(std::filesystem::path path) {
+void OptionsPopup::renderImage(const std::filesystem::path& path) {
     OptionsPopup::imagePath = path;
     if (this->colorLayer->getChildByID("image-preview")) {
         this->colorLayer->removeChild(this->imagePreview, true);

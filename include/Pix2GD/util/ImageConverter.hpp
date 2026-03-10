@@ -29,6 +29,6 @@ public:
 
     static void shrinkObjects(std::vector<GDObject>& objects, int width, int height);
 
-    static void run(std::string path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight);
+    static void run(const std::string& path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight, bool createColTrigs);
 
 };

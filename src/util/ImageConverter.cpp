@@ -517,7 +517,7 @@ void ImageConverter::shrinkObjects(std::vector<GDObject>& objects, int width, in
     }
 }
 
-void ImageConverter::run(std::string path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight) {
+void ImageConverter::run(const std::string& path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight, bool createColTrigs) {
     int width, height, channels;
 
     unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 4);
@@ -549,7 +549,19 @@ void ImageConverter::run(std::string path, float scale, int startColorID, int st
                 else {
                     colorIndex = palette.size() + 1;
                     palette[key] = colorIndex;
-                    ui->m_editorLayer->m_levelSettings->m_effectManager->setColorAction(ColorAction::create({ pixelCol.r, pixelCol.g, pixelCol.b }, false, 0), startColorID + colorIndex);
+
+                    if (createColTrigs) {
+                        auto colTrigger = static_cast<EffectGameObject*>(ui->m_editorLayer->createObject(899, ccp(-15, 90+colorIndex*15), false));
+                        colTrigger->m_targetColor = startColorID + colorIndex - 1;
+                        colTrigger->m_triggerTargetColor = { pixelCol.r, pixelCol.g, pixelCol.b };
+                        colTrigger->m_duration = 0;
+                        auto label = colTrigger->getChildByType<CCLabelBMFont>(0);
+                        label->setString(fmt::to_string(colTrigger->m_targetColor).c_str());
+                    }
+                    else {
+                        ui->m_editorLayer->m_levelSettings->m_effectManager->setColorAction(ColorAction::create({ pixelCol.r, pixelCol.g, pixelCol.b }, false, 0), startColorID + colorIndex - 1);
+                    }
+
                 }
             }
         }
@@ -568,7 +580,7 @@ void ImageConverter::run(std::string path, float scale, int startColorID, int st
         if (o.zOrder == 0) zOrderPassedZero = true;
 
         auto gameObject = ui->m_editorLayer->createObject(917, CCPoint(centerX, centerY), false);
-        gameObject->m_baseColor->m_colorID = startColorID + o.color;
+        gameObject->m_baseColor->m_colorID = startColorID + o.color - 1;
 
         gameObject->m_zOrder = zOrderPassedZero ? o.zOrder + 1 : o.zOrder;
         gameObject->updateCustomScaleX(o.width * scale);
