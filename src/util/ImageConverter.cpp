@@ -276,7 +276,6 @@ std::vector<GDObject> ImageConverter::tileToGDObjects(const std::vector<std::vec
     return gdObjects;
 }
 
-// Call this from your convertImage function
 std::vector<GDObject> ImageConverter::imgToGDObjects(const std::vector<std::vector<cocos2d::ccColor4B>>& image, std::unordered_map<uint32_t, int>& palette, int zLayer, int startingZOrder, int tileWidth, int tileHeight) {
     int imgWidth = image[0].size();
     int imgHeight = image.size();
