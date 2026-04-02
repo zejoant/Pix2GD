@@ -1,3 +1,6 @@
+# v1.0.4
+- stoopid hsv bug fix
+
 # 1.0.3
 - Removed BetterEdit dependency for button remaining on playtest
 - Added HSV Mode

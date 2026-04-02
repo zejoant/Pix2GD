@@ -8,7 +8,7 @@
 	},
 	"id": "zejoant.pix2gd",
 	"name": "Pix2GD",
-	"version": "v1.0.3",
+	"version": "v1.0.4",
 	"developer": "Zejoant",
 	"description": "Imports pixel art images into Geometry Dash",
 	"dependencies": {
