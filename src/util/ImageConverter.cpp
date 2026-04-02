@@ -571,7 +571,7 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
     std::unordered_map<uint32_t, cocos2d::ccHSVValue> hsv;
     std::vector<std::vector<cocos2d::ccColor4B>> image(height, std::vector<cocos2d::ccColor4B>(width));
 
-    if (hsvMode) {
+    /*if (hsvMode) {
         if (createColTrigs) {
             auto colTrigger = static_cast<EffectGameObject*>(ui->m_editorLayer->createObject(899, ccp(-15, 90), false));
             colTrigger->m_targetColor = startColorID;
@@ -583,7 +583,7 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
         else {
             ui->m_editorLayer->m_levelSettings->m_effectManager->setColorAction(ColorAction::create({ 255, 255, 255 }, false, 0), startColorID);
         }
-    }
+    }*/
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -639,8 +639,14 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
 
         auto gameObject = ui->m_editorLayer->createObject(917, CCPoint(centerX, centerY), false);
         if (hsvMode) {
-            gameObject->m_baseColor->m_hsv = hsv[startColorID + o.color - 1];
-            gameObject->m_baseColor->m_colorID = startColorID;
+            auto& hsvv = gameObject->m_baseColor->m_hsv;
+            hsvv = hsv[startColorID + o.color - 1];
+
+            hsvv.absoluteSaturation = true;
+            hsvv.absoluteBrightness = true;
+
+            //gameObject->m_baseColor->m_hsv = hsv[startColorID + o.color - 1];
+            gameObject->m_baseColor->m_colorID = 1010;//startColorID;
         }
         else {
             gameObject->m_baseColor->m_colorID = startColorID + o.color - 1;
