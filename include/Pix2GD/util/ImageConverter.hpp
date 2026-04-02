@@ -29,6 +29,8 @@ public:
 
     static void shrinkObjects(std::vector<GDObject>& objects, int width, int height);
 
-    static void run(const std::string& path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight, bool createColTrigs);
+    static cocos2d::ccHSVValue RGBtoHSV(const cocos2d::ccColor4B& color);
+
+    static void run(const std::string& path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight, bool createColTrigs, bool hsvMode);
 
 };

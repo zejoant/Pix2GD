@@ -517,8 +517,47 @@ void ImageConverter::shrinkObjects(std::vector<GDObject>& objects, int width, in
     }
 }
 
-void ImageConverter::run(const std::string& path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight, bool createColTrigs) {
+cocos2d::ccHSVValue ImageConverter::RGBtoHSV(const cocos2d::ccColor4B& color){
+    float r = color.r / 255.0f;
+    float g = color.g / 255.0f;
+    float b = color.b / 255.0f;
+
+    float max = (std::max)(r, (std::max)(g, b));
+    float min = (std::min)(r, (std::min)(g, b));
+    float del = max - min;
+
+    float hue = 0.0f, sat = 0.0f, vibe = max;
+
+    if (del > 0.0f) {
+        sat = del / max;
+        if (max == r) {
+            hue = 60.0f * ((g - b) / del);
+        }
+        else if (max == g) {
+            hue = 60.0f * (((b - r) / del) + 2.0f);
+        }
+        else {
+            hue = 60.0f * (((r - g) / del) + 4.0f);
+        }
+    }
+    if (hue < 0.0f) {
+        hue += 360.0f;
+    }
+    hue = ((static_cast<int>(hue) + 180) % 360) - 180;
+    // hue 0 is goofy
+    if (hue == 0.0f) hue++;
+
+    cocos2d::ccHSVValue hsv;
+    hsv.h = hue;
+    hsv.s = sat;
+    hsv.v = vibe;
+
+    return hsv;
+}
+
+void ImageConverter::run(const std::string& path, float scale, int startColorID, int startingZOrder, int zLayer, int tileWidth, int tileHeight, bool createColTrigs, bool hsvMode) {
     int width, height, channels;
+    //bool hsvMode = true;
 
     unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 4);
     if (!data) {
@@ -529,7 +568,22 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
     auto ui = EditorUI::get();
 
     std::unordered_map<uint32_t, int> palette;
+    std::unordered_map<uint32_t, cocos2d::ccHSVValue> hsv;
     std::vector<std::vector<cocos2d::ccColor4B>> image(height, std::vector<cocos2d::ccColor4B>(width));
+
+    if (hsvMode) {
+        if (createColTrigs) {
+            auto colTrigger = static_cast<EffectGameObject*>(ui->m_editorLayer->createObject(899, ccp(-15, 90), false));
+            colTrigger->m_targetColor = startColorID;
+            colTrigger->m_triggerTargetColor = { 255, 255, 255 };
+            colTrigger->m_duration = 0;
+            auto label = colTrigger->getChildByType<CCLabelBMFont>(0);
+            label->setString(fmt::to_string(colTrigger->m_targetColor).c_str());
+        }
+        else {
+            ui->m_editorLayer->m_levelSettings->m_effectManager->setColorAction(ColorAction::create({ 255, 255, 255 }, false, 0), startColorID);
+        }
+    }
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -549,6 +603,10 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
                 else {
                     colorIndex = palette.size() + 1;
                     palette[key] = colorIndex;
+                    if (hsvMode) {
+                        hsv[startColorID + colorIndex - 1] = ImageConverter::RGBtoHSV(pixelCol);
+                        continue;
+                    }
 
                     if (createColTrigs) {
                         auto colTrigger = static_cast<EffectGameObject*>(ui->m_editorLayer->createObject(899, ccp(-15, 90+colorIndex*15), false));
@@ -580,7 +638,13 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
         if (o.zOrder == 0) zOrderPassedZero = true;
 
         auto gameObject = ui->m_editorLayer->createObject(917, CCPoint(centerX, centerY), false);
-        gameObject->m_baseColor->m_colorID = startColorID + o.color - 1;
+        if (hsvMode) {
+            gameObject->m_baseColor->m_hsv = hsv[startColorID + o.color - 1];
+            gameObject->m_baseColor->m_colorID = startColorID;
+        }
+        else {
+            gameObject->m_baseColor->m_colorID = startColorID + o.color - 1;
+        }
 
         gameObject->m_zOrder = zOrderPassedZero ? o.zOrder + 1 : o.zOrder;
         gameObject->updateCustomScaleX(o.width * scale);

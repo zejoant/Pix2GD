@@ -12,6 +12,7 @@ protected:
     int tileWidth;
     int tileHeight;
     bool createColTriggers = false;
+    bool hsvMode = false;
 
     //CCMenu* rightPanel = nullptr;
     //CCLayerColor* colorLayer = nullptr;

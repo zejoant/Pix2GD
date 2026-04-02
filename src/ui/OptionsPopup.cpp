@@ -231,6 +231,33 @@ bool OptionsPopup::init(std::string const& value) {
     //colTrigLabel->limitLabelWidth()
 
 
+
+
+
+    // toggler and its label panel
+    auto hsvPanel = CCMenu::create();
+    hsvPanel->setContentSize({ leftPanel->getContentWidth(), 30.f });
+    hsvPanel->setLayout(RowLayout::create()->setGap(5)->setAxisAlignment(AxisAlignment::Start));
+    leftPanel->addChild(hsvPanel);
+
+    auto hsvToggler = CCMenuItemExt::createTogglerWithStandardSprites(
+        1.f,
+        [this](CCMenuItemToggler* btn) {
+            OptionsPopup::hsvMode = !btn->isToggled();
+            Mod::get()->setSavedValue<bool>("hsv-mode", OptionsPopup::hsvMode);
+        }
+    );
+    hsvPanel->addChild(hsvToggler);
+    OptionsPopup::hsvMode = Mod::get()->getSavedValue<bool>("hsv-mode", false);
+    hsvToggler->toggle(OptionsPopup::hsvMode);
+    hsvToggler->updateSprite();
+
+    // label
+    auto hsvLabel = CCLabelBMFont::create("HSV Mode               ", "goldFont.fnt");
+    hsvPanel->addChild(hsvLabel);
+    hsvPanel->updateLayout();
+    hsvLabel->setScale(0.4f);
+
     tilePanel->updateLayout();
     scolPanel->updateLayout();
     layerPanel->updateLayout();
@@ -252,7 +279,7 @@ OptionsPopup* OptionsPopup::create(std::string const& text) {
 }
 
 void OptionsPopup::onImport(CCObject*) {
-    ImageConverter::run(OptionsPopup::imagePath.string(), OptionsPopup::scale, OptionsPopup::startColorID, OptionsPopup::startingZOrder, OptionsPopup::zLayer, OptionsPopup::tileWidth, OptionsPopup::tileHeight, OptionsPopup::createColTriggers);
+    ImageConverter::run(OptionsPopup::imagePath.string(), OptionsPopup::scale, OptionsPopup::startColorID, OptionsPopup::startingZOrder, OptionsPopup::zLayer, OptionsPopup::tileWidth, OptionsPopup::tileHeight, OptionsPopup::createColTriggers, OptionsPopup::hsvMode);
     this->onClose(nullptr);
 }
 
