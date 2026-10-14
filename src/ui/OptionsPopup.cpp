@@ -52,6 +52,13 @@ bool OptionsPopup::init(std::string const& value) {
     auto btn2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(OptionsPopup::onImport));
     rightPanel->addChild(btn2);
 
+    // info button
+    auto infoSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+    infoSpr->setScale(0.8f);
+    auto infoBtn = CCMenuItemSpriteExtra::create(infoSpr, this, menu_selector(OptionsPopup::onInfo));
+    mainPanel->addChildAtPosition(infoBtn, Anchor::TopRight, ccp(popupW * 0.05f, popupH * 0.05f));
+
+
     // left panel title
     auto leftPanelLabel = CCLabelBMFont::create("Settings", "bigFont.fnt");
     leftPanel->addChild(leftPanelLabel);
@@ -205,11 +212,23 @@ bool OptionsPopup::init(std::string const& value) {
     tHeightInput->setString(Mod::get()->getSavedValue<std::string>("tile-height", "0"), true);
     tilePanel->addChild(tHeightInput);
 
-    // toggler and its label panel
+
+
+
+    // hsv panel
+    auto hsvPanel = CCMenu::create();
+    hsvPanel->setContentSize({ leftPanel->getContentWidth(), 30.f });
+    hsvPanel->setLayout(RowLayout::create()->setGap(5)->setAxisAlignment(AxisAlignment::Start));
+    leftPanel->addChild(hsvPanel);
+
+    // color trig panel
     auto colTrigPanel = CCMenu::create();
     colTrigPanel->setContentSize({ leftPanel->getContentWidth(), 30.f });
     colTrigPanel->setLayout(RowLayout::create()->setGap(5)->setAxisAlignment(AxisAlignment::Start));
     leftPanel->addChild(colTrigPanel);
+
+
+
 
     auto colTrigToggler = CCMenuItemExt::createTogglerWithStandardSprites(
         1.f,
@@ -219,7 +238,7 @@ bool OptionsPopup::init(std::string const& value) {
         }
     );
     colTrigPanel->addChild(colTrigToggler);
-    OptionsPopup::createColTriggers = Mod::get()->getSavedValue<bool>("create-col-trigs", false);
+    OptionsPopup::createColTriggers = Mod::get()->getSavedValue<bool>("create-col-trigs", true);
     colTrigToggler->toggle(OptionsPopup::createColTriggers);
     colTrigToggler->updateSprite();
 
@@ -228,35 +247,43 @@ bool OptionsPopup::init(std::string const& value) {
     colTrigPanel->addChild(colTrigLabel);
     colTrigPanel->updateLayout();
     colTrigLabel->setScale(0.4f);
-    //colTrigLabel->limitLabelWidth()
 
 
-
-
-
-    // toggler and its label panel
-    auto hsvPanel = CCMenu::create();
-    hsvPanel->setContentSize({ leftPanel->getContentWidth(), 30.f });
-    hsvPanel->setLayout(RowLayout::create()->setGap(5)->setAxisAlignment(AxisAlignment::Start));
-    leftPanel->addChild(hsvPanel);
 
     auto hsvToggler = CCMenuItemExt::createTogglerWithStandardSprites(
         1.f,
-        [this](CCMenuItemToggler* btn) {
-            OptionsPopup::hsvMode = !btn->isToggled();
+        [this, colTrigLabel, colTrigToggler, colorInput, scolPanel, leftPanel, scaleInput](CCMenuItemToggler* btn) {
+            bool active = btn->isToggled();
+            OptionsPopup::hsvMode = !active;
             Mod::get()->setSavedValue<bool>("hsv-mode", OptionsPopup::hsvMode);
+            //FLAlertLayer::create("Error", "Balls", "OK")->show();
+
+            colTrigLabel->setVisible(!OptionsPopup::hsvMode);
+            colTrigToggler->setVisible(!OptionsPopup::hsvMode);
+            colorInput->setVisible(active);
+            scaleInput->setWidth(!active ? scolPanel->getContentWidth() : scolPanel->getContentWidth() * 0.5f);
+            scolPanel->updateLayout();
+            leftPanel->updateLayout();
         }
     );
     hsvPanel->addChild(hsvToggler);
-    OptionsPopup::hsvMode = Mod::get()->getSavedValue<bool>("hsv-mode", false);
+    OptionsPopup::hsvMode = Mod::get()->getSavedValue<bool>("hsv-mode", true);
     hsvToggler->toggle(OptionsPopup::hsvMode);
     hsvToggler->updateSprite();
+    colTrigLabel->setVisible(!OptionsPopup::hsvMode);
+    colTrigToggler->setVisible(!OptionsPopup::hsvMode);
+    colorInput->setVisible(!OptionsPopup::hsvMode);
+    scaleInput->setWidth(OptionsPopup::hsvMode ? scolPanel->getContentWidth() : scolPanel->getContentWidth() * 0.5f);
 
     // label
     auto hsvLabel = CCLabelBMFont::create("HSV Mode               ", "goldFont.fnt");
     hsvPanel->addChild(hsvLabel);
     hsvPanel->updateLayout();
     hsvLabel->setScale(0.4f);
+
+
+
+
 
     tilePanel->updateLayout();
     scolPanel->updateLayout();
@@ -283,13 +310,32 @@ void OptionsPopup::onImport(CCObject*) {
     this->onClose(nullptr);
 }
 
+void OptionsPopup::onInfo(CCObject*) {
+    MDPopup::create(
+        "Pix2GD Help",
+
+        "<cb>Scale:</c> Scales the imported image. With a scale of 1, a 4x4 area of pixels will fit in a block.\n\n"
+        "<cy>Starting Color ID:</c> The color channels used will start at this ID and increase as needed.\n\n"
+        "<cp>Starting Z-Order:</c> The objects will start at this z-order and increase as needed.\n\n"
+        "<cl>Editor Layer:</c> The editor layer where objects are placed.\n\n"
+        "<cb>Create Color Triggers:</c> Will set the colors through color triggers instead of setting the color channels directly.\n\n"
+        "<cy>HSV Mode:</c> Uses HSV instead of color channels. The only reason to disable this option is if you plan to modify the color palette after importing.\n\n"
+
+        "<cg>Tile Width / Height:</c> The image is processed in tiles of the specified size. All tiles are completely separate from eachother, meaning objects of one tile will never overlap another tile. Each tile's objects will be linked together.\n\n"
+        "<cr>Keep both at 0 if you are not importing a tileset or spritesheet,</c> as this will treat the whole image as a single tile resulting in the least amount of objects. However, if importing a large detailed image is freezing the game for a long time, consider setting a tile size to speed up the process\n\n"
+        "If you are importing a tileset or spritesheet, make sure the set the tile width and height even if your tileset has separated tiles, as it will both take less time to import and result in less objects.\n\n"
+        "<cb>File Formats:</c> Pix2GD supports .png, .jpg, .jpeg .gif .tga and .bmp files, though the last three will not display an image preview. Since Pix2GD is primarily designed for pixel art, .png is the recommended format due to its lossless image quality.\n\n",
+        "OK"
+    )->show();
+}
+
 void OptionsPopup::onBrowse(CCObject*) {
     using namespace geode::utils::file;
 
 
     FilePickOptions::Filter filter;
-    filter.description = "Images (png, jpg, jpeg, gif)";
-    filter.files.insert({ "*.png", "*.jpg", "*.jpeg", "*.gif" });
+    filter.description = "Images";
+    filter.files.insert({ "*.png", "*.jpg", "*.jpeg", "*.gif", "*.tga", "*.bmp"});
 
     async::spawn(pick(PickMode::OpenFile, { std::nullopt, {filter} }), [this](auto result) {
         if (result.isOk()) {

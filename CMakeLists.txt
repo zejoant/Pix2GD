@@ -17,9 +17,10 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_library(${PROJECT_NAME} SHARED
     src/main.cpp
     src/hooks/EditorUI.cpp
+    src/util/ObjectPlacer.cpp
     src/util/ImageConverter.cpp
     src/ui/OptionsPopup.cpp
-)
+ )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
     include

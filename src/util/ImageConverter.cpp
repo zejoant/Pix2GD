@@ -1,43 +1,110 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/EditorUI.hpp>
-using namespace geode::prelude;
-
-#include <vector>
-#include <unordered_map>
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
 
 #include <util/ImageConverter.hpp>
+#include <util/ObjectPlacer.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+using namespace geode::prelude;
+
 uint32_t ImageConverter::getRGBKey(cocos2d::ccColor4B col) {
-    return (col.r << 16) | (col.g << 8) | col.b;
+    return (uint32_t(col.r) << 16) | (uint32_t(col.g) << 8) | uint32_t(col.b);
 }
 
-std::vector<std::vector<cocos2d::ccColor4B>> ImageConverter::getFlippedTile(const std::vector<std::vector<cocos2d::ccColor4B>>& fullImg, int x0, int y0, int tw, int th, bool flipX, bool flipY) {
-    std::vector<std::vector<cocos2d::ccColor4B>> tile(th, std::vector<cocos2d::ccColor4B>(tw));
-    for (int y = 0; y < th; y++) {
-        for (int x = 0; x < tw; x++) {
-            int srcX = flipX ? (x0 + tw - 1 - x) : (x0 + x);
-            int srcY = flipY ? (y0 + th - 1 - y) : (y0 + y);
-            tile[y][x] = fullImg[srcY][srcX];
+std::vector<std::vector<cocos2d::ccColor4B>> ImageConverter::getFlippedTile(const std::vector<std::vector<cocos2d::ccColor4B>>& fullImg, int x0, int y0, int tw, int th, bool flipX, bool flipY, int rotation) {
+    int outWidth = rotation != 0 ? th : tw;
+    int outHeight = rotation != 0 ? tw : th;
+
+    std::vector<std::vector<cocos2d::ccColor4B>>tile(outHeight, std::vector<cocos2d::ccColor4B>(outWidth));
+
+    for (int y = 0; y < outHeight; y++) {
+        for (int x = 0; x < outWidth; x++) {
+
+            // Coordinates in the rotated image.
+            int rx = flipX ? outWidth - 1 - x : x;
+            int ry = flipY ? outHeight - 1 - y : y;
+
+            int srcX;
+            int srcY;
+
+            switch (rotation) {
+                case 0:
+                    srcX = rx;
+                    srcY = ry;
+                    break;
+
+                case 1: // 90° clockwise
+                    srcX = ry;
+                    srcY = th - 1 - rx;
+                    break;
+
+                case -1: // 90° counter-clockwise
+                    srcX = tw - 1 - ry;
+                    srcY = rx;
+                    break;
+
+                default:
+                    srcX = rx;
+                    srcY = ry;
+                    break;
+            }
+
+            tile[y][x] = fullImg[y0 + srcY][x0 + srcX];
         }
     }
+
     return tile;
 }
 
-std::vector<GDObject> ImageConverter::tileToGDObjects(const std::vector<std::vector<cocos2d::ccColor4B>>& tile, int zLayer, int startingZOrder, int maxLinked, std::unordered_map<uint32_t, int>& palette) {
+void ImageConverter::undoFlippedTile(TileVariant& tile, int x0, int y0, int tw, int th) {
+    int rotatedWidth = tile.rotation != 0 ? th : tw;
+    int rotatedHeight = tile.rotation != 0 ? tw : th;
+
+    for (auto& o : tile.objects) {
+        // Undo flips in the rotated coordinate system.
+        if (tile.flipX) {
+            o.x = rotatedWidth - o.x - o.width;
+            o.flipX = true;
+        }
+        if (tile.flipY) {
+            o.y = rotatedHeight - o.y - o.height;
+            o.flipY = true;
+        }
+
+        // Undo rotation.
+        if (tile.rotation == 1) { // from 90 deg to 0 deg
+            int oldX = o.x;
+            int oldY = o.y;
+
+            o.x = oldY;
+            o.y = th - oldX - o.width;
+            o.rotation--;
+        }
+        else if (tile.rotation == -1) { // from -90 deg to 0 deg
+            int oldX = o.x;
+            int oldY = o.y;
+
+            o.x = tw - oldY - o.height;
+            o.y = oldX;
+            o.rotation++;
+        }
+
+        o.x += x0;
+        o.y += y0;
+    }
+}
+
+std::vector<GDObject> ImageConverter::tileToGDObjects(const std::vector<std::vector<cocos2d::ccColor4B>>& tile, int zLayer, int startingZOrder, int maxLinked, const std::unordered_map<uint32_t, int>& palette) {
     int th = tile.size();
     int tw = tile[0].size();
 
-    std::vector<GDObject> gdObjects;
-    std::vector<int> idOrder;
-    std::vector<std::vector<bool>> processed(th, std::vector<bool>(tw, false));
-    std::vector<std::vector<int>> cov(th, std::vector<int>(tw, -1));
+    std::vector<GDObject> gdObjects; //resulting gd object list
+    std::vector<std::vector<bool>> processed(th, std::vector<bool>(tw, false)); //list of pixels that matches the original image (these will never be considered again)
+    std::vector<std::vector<int>> cov(th, std::vector<int>(tw, -1)); //list of what visible object covers what pixels (an object is represented by its index in the gdObjects list)
 
+    //loop through each pixel in the tile
     for (int y = 0; y < th; y++) {
         for (int x = 0; x < tw; x++) {
             if (processed[y][x]) continue;
@@ -48,231 +115,79 @@ std::vector<GDObject> ImageConverter::tileToGDObjects(const std::vector<std::vec
                 continue;
             }
 
-            uint32_t baseRGB = getRGBKey(baseCol);
-            int rectWidth = 1;
-            int rectHeight = 1;
-            float minInsertID = -1;
-            int revertCount = 0;
+            const uint32_t baseRGB = getRGBKey(baseCol); //converts the pixel's (and in turn, the object's) color into a unique int ID
+            const int colorID = palette.at(baseRGB);
+            constexpr size_t objectsTriedCount = 2;
 
-            if (cov[y][x] > -1 && idOrder[cov[y][x]] > minInsertID) {
-                minInsertID = idOrder[cov[y][x]];
-            }
-
-            //expansion right
-            bool canExpandRight = true;
-            while (canExpandRight && x + rectWidth < tw) {
-                bool useful = false;
-                int nx = x + rectWidth;
-                for (int i = 0; i < rectHeight; i++) {
-                    cocos2d::ccColor4B p = tile[y + i][nx];
-                    if (p.a != 255 || (processed[y + i][nx] && getRGBKey(p) != baseRGB)) {
-                        canExpandRight = false;
-                        if (cov[y + i][nx] > -1 && idOrder[cov[y + i][nx]] > minInsertID)
-                            minInsertID = idOrder[cov[y + i][nx]];
-                        break;
+            /*auto makeTask = [&](auto placeObject) {
+                return async::runtime().spawnBlocking<ObjectComparator>(
+                    [&, placeObject] {
+                        return placeObject(tile, gdObjects, processed, cov, palette, y, x, th, tw, baseRGB, zLayer, startingZOrder, maxLinked, colorID);
                     }
-                    if (!processed[y + i][nx] && getRGBKey(p) == baseRGB) useful = true;
-                }
-                if (canExpandRight) {
-                    rectWidth++;
-                    revertCount = useful ? 0 : revertCount + 1;
-                }
-            }
-            rectWidth -= revertCount;
-            revertCount = 0;
+                );
+            };
 
-            //expansion down
-            bool canExpandDown = true;
-            while (canExpandDown && y + rectHeight < th) {
-                bool useful = false;
-                int ny = y + rectHeight;
-                for (int i = 0; i < rectWidth; i++) {
-                    cocos2d::ccColor4B p = tile[ny][x + i];
-                    if (p.a != 255 || (processed[ny][x + i] && getRGBKey(p) != baseRGB)) {
-                        canExpandDown = false;
-                        if (cov[ny][x + i] > -1 && idOrder[cov[ny][x + i]] > minInsertID)
-                            minInsertID = idOrder[cov[ny][x + i]];
-                        break;
-                    }
-                    if (!processed[ny][x + i] && getRGBKey(p) == baseRGB) useful = true;
-                }
-                if (canExpandDown) {
-                    rectHeight++;
-                    revertCount = useful ? 0 : revertCount + 1;
-                }
-            }
-            rectHeight -= revertCount;
-            revertCount = 0;
+            //try placing all object types in parallel
+            std::array<arc::BlockingTaskHandle<ObjectComparator>, objectsTriedCount> tasks = {
+                makeTask(ObjectPlacer::placePixel),
+                makeTask(ObjectPlacer::placeStair)
+            };
 
-            //expansion down and right at the same time
-            bool canExpandX = true;
-            bool canExpandY = true;
-            int revertX = 0;
-            int revertY = 0;
-            while (true) {
-                bool grew = false;
+            // Wait for all tasks to finish
+            std::array<ObjectComparator, objectsTriedCount> contenders = {
+                tasks[0].blockOn(),
+                tasks[1].blockOn()
+            };*/
+            
 
-                canExpandX = false;
-                bool usefulCheckX = false;
-                if (x + rectWidth < tw) {
-                    canExpandX = true;
-                    int nx = x + rectWidth;
-                    for (int i = 0; i < rectHeight; i++) {
-                        int ny = y + i;
-                        cocos2d::ccColor4B p = tile[ny][nx];
-                        if (p.a != 255 || (processed[ny][nx] && getRGBKey(p) != baseRGB)) {
-                            canExpandX = false;
-                            if (cov[ny][nx] > -1 && idOrder[cov[ny][nx]] > minInsertID)
-                                minInsertID = idOrder[cov[ny][nx]];
-                            break;
-                        }
-                        else if (getRGBKey(p) == baseRGB) usefulCheckX = true;
-                    }
-                    if (canExpandX) {
-                        rectWidth++;
-                        grew = true;
+            std::array<ObjectComparator, objectsTriedCount> contenders = {
+                ObjectPlacer::placePixel(tile, gdObjects, processed, cov, palette, y, x, th, tw, baseRGB, zLayer, startingZOrder, maxLinked, colorID),
+                ObjectPlacer::placeStair(tile, gdObjects, processed, cov, palette, y, x, th, tw, baseRGB, zLayer, startingZOrder, maxLinked, colorID)
+            };
+
+            GDObject bestObjectTried = std::max_element(contenders.begin(), contenders.end(),
+                [](const ObjectComparator& a, const ObjectComparator& b) {
+                    return a.pixelsSaves < b.pixelsSaves;
+                }
+            )->object;
+
+            //mark coverage and processed pixels
+            bool currentPixelMarked = false;
+            bestObjectTried.forEachPixel([&](int nx, int ny) {
+                cocos2d::ccColor4B p = tile[ny][nx];
+                const uint32_t pixelRGBKey = getRGBKey(p);
+                //pixel is set to processed if the pixel has the same color as the object and the objects covering this pixel has a lower z-order
+                if (pixelRGBKey == baseRGB && (cov[ny][nx] < 0 || bestObjectTried.ID > gdObjects[cov[ny][nx]].ID)) {
+                    processed[ny][nx] = true;
+                    if (ny == y && nx == x) {
+                        currentPixelMarked = true;
                     }
                 }
 
-                canExpandY = false;
-                bool usefulCheckY = false;
-                if (y + rectHeight < th) {
-                    canExpandY = true;
-                    int ny = y + rectHeight;
-                    for (int i = 0; i < rectWidth; i++) {
-                        int nx = x + i;
-                        cocos2d::ccColor4B p = tile[ny][nx];
-                        if (p.a != 255 || (processed[ny][nx] && getRGBKey(p) != baseRGB)) {
-                            canExpandY = false;
-                            if (cov[ny][nx] > -1 && idOrder[cov[ny][nx]] > minInsertID) {
-                                minInsertID = idOrder[cov[ny][nx]];
-                            }
-                            break;
-                        }
-                        else if (getRGBKey(p) == baseRGB) {
-                            usefulCheckY = true;
-                        }
-                    }
-                    if (canExpandY) {
-                        rectHeight++;
-                        grew = true;
-                    }
+                //updates coverage for the pixel if the current object has the highest z-order for this pixel
+                if (cov[ny][nx] < 0 || bestObjectTried.ID > gdObjects[cov[ny][nx]].ID) {
+                    cov[ny][nx] = gdObjects.size(); //index of object that is at the top of this pixel
                 }
 
-                // Stop if nothing expanded
-                if (!grew) {
-                    break;
-                }
+                return true; // continue iterating
+            });
 
-                if (canExpandX) {
-                    if (usefulCheckX) {
-                        revertX = 0;
-                        revertY = 0;
-                    }
-                    else revertX++;
-                }
-                if (canExpandY) {
-                    if (usefulCheckY) {
-                        revertX = 0;
-                        revertY = 0;
-                    }
-                    else revertY++;
-                }
-
-            }
-            rectHeight -= revertY;
-            rectWidth -= revertX;
-
-
-            int insertKey = idOrder.size();
-            if (!idOrder.empty()) {
-                //expansion left
-                bool canExpandLeft = true;
-                while (canExpandLeft && x > 0) {
-                    int nx = x - 1;
-                    //check every pixel in the rects height
-                    for (int i = 0; i < rectHeight; i++) {
-                        int ny = y + i;
-                        cocos2d::ccColor4B p = tile[ny][nx];
-
-                        if (p.a != 255) {
-                            canExpandLeft = false;
-                        }
-                        else if (processed[ny][nx] && getRGBKey(p) != baseRGB) {
-                            if (minInsertID >= idOrder[cov[ny][nx]]) {
-                                canExpandLeft = false;
-                            }
-                            else if (idOrder[cov[ny][nx]] < insertKey) {
-                                insertKey = idOrder[cov[ny][nx]];
-                            }
-                        }
-                        else if (getRGBKey(p) == baseRGB) {
-                            if (cov[ny][nx] > -1 && idOrder[cov[ny][nx]] > minInsertID) {
-                                minInsertID = idOrder[cov[ny][nx]];
-                            }
-                        }
-                    }
-                    if (canExpandLeft) {
-                        rectWidth++;
-                        x--;
-                    }
-                }
-
-                //expansion up
-                bool canExpandUp = true;
-                while (canExpandUp && y > 0) {
-                    int ny = y - 1;
-                    for (int i = 0; i < rectWidth; i++) {
-                        int nx = x + i;
-                        cocos2d::ccColor4B p = tile[ny][nx];
-
-                        if (p.a != 255) {
-                            canExpandUp = false;
-                        }
-                        else if (processed[ny][nx] && getRGBKey(p) != baseRGB) {
-                            if (minInsertID >= idOrder[cov[ny][nx]]) {
-                                canExpandUp = false;
-                            }
-                            else if (idOrder[cov[ny][nx]] < insertKey) {
-                                insertKey = idOrder[cov[ny][nx]];
-                            }
-                        }
-                        else if (getRGBKey(p) == baseRGB) {
-                            if (cov[ny][nx] > -1 && idOrder[cov[ny][nx]] > minInsertID) {
-                                minInsertID = idOrder[cov[ny][nx]];
-                            }
-                        }
-                    }
-                    if (canExpandUp) {
-                        rectHeight++;
-                        y--;
-                    }
-                }
+            if (!currentPixelMarked) {
+                log::debug("currentPixelMarked");
+            //    x--;
             }
 
 
-            // Registration
-            for (int dy = 0; dy < rectHeight; dy++) {
-                for (int dx = 0; dx < rectWidth; dx++) {
-                    cocos2d::ccColor4B p = tile[y + dy][x + dx];
-                    if (p.a != 0 && getRGBKey(p) == baseRGB && (cov[y + dy][x + dx] < 0 || insertKey > idOrder[cov[y + dy][x + dx]])) {
-                        processed[y + dy][x + dx] = true;
-                    }
-                    if (cov[y + dy][x + dx] < 0 || insertKey > idOrder[cov[y + dy][x + dx]]) {
-                        cov[y + dy][x + dx] = idOrder.size();
-                    }
-                }
-            }
-
-            int colorID = palette[baseRGB];
-            gdObjects.emplace_back(x, y, rectWidth, rectHeight, colorID, zLayer, startingZOrder, maxLinked, idOrder.size());
-            for (int& id : idOrder) if (id >= insertKey) id++;
-            idOrder.push_back(insertKey);
+            for (GDObject& obj : gdObjects) if (obj.ID >= bestObjectTried.ID) obj.ID++;
+            gdObjects.push_back(bestObjectTried);
         }
     }
+
+    //sort the list of gd objects based on their insert index
     std::sort(gdObjects.begin(), gdObjects.end(), [&](const GDObject& a, const GDObject& b) {
-        return idOrder[a.ID] < idOrder[b.ID];
+        return a.ID < b.ID;
     });
+
     return gdObjects;
 }
 
@@ -287,6 +202,7 @@ std::vector<GDObject> ImageConverter::imgToGDObjects(const std::vector<std::vect
     int tilesY = std::ceil((double)imgHeight / tileHeight);
     int maxLinked = 0;
 
+    //loop through each tile and convert it to gd objects
     for (int ty = 0; ty < tilesY; ty++) {
         for (int tx = 0; tx < tilesX; tx++) {
             int x0 = tx * tileWidth;
@@ -295,54 +211,168 @@ std::vector<GDObject> ImageConverter::imgToGDObjects(const std::vector<std::vect
             int th = std::min(tileHeight, imgHeight - y0);
             maxLinked++;
 
-            // Process the 4 orientations to see which is best
-            auto tile = getFlippedTile(image, x0, y0, tw, th, false, false);
-            auto objsN = tileToGDObjects(tile, zLayer, startingZOrder, maxLinked, palette);
+            auto makeTask = [&](bool flipX, bool flipY, int rotation = 0) {
+                return async::runtime().spawnBlocking<TileVariant>(
+                    [&image, &palette, x0, y0, tw, th, zLayer, startingZOrder, maxLinked, flipX, flipY, rotation] {
+                        auto tile = getFlippedTile(image, x0, y0, tw, th, flipX, flipY, rotation);
+                        std::vector<GDObject> objects = removeRedundantObjects(tileToGDObjects(tile, zLayer, startingZOrder, maxLinked, palette), rotation == 0 ? tw : th, rotation == 0 ? th : tw);
+                        return TileVariant{std::move(objects), flipX, flipY, rotation};
+                    }
+                );
+            };
 
-            tile = getFlippedTile(image, x0, y0, tw, th, false, true);
-            auto objsY = tileToGDObjects(tile, zLayer, startingZOrder, maxLinked, palette);
+            constexpr uint8_t taskCount = 10; //There are only 10 possible tile variants with rotation and flipping
 
-            tile = getFlippedTile(image, x0, y0, tw, th, true, false);
-            auto objsX = tileToGDObjects(tile, zLayer, startingZOrder, maxLinked, palette);
+            // Process variants of the tile in parallel to see which is best
+            std::array<arc::BlockingTaskHandle<TileVariant>, taskCount> tasks = {
+                makeTask(false, false), makeTask(false, true), makeTask(true, false), makeTask(true, true), //flipped vertical, horizontal and both
+                makeTask(false, false, 1), makeTask(false, true, 1), makeTask(true, false, 1), //rotated right and flip variants
+                makeTask(false, false, -1), makeTask(false, true, -1), makeTask(true, false, -1) //rotated left and flip variants
+            };
 
-            tile = getFlippedTile(image, x0, y0, tw, th, true, true);
-            auto objsXY = tileToGDObjects(tile, zLayer, startingZOrder, maxLinked, palette);
-
-            std::vector<GDObject>* best = &objsN;
-            bool usedFlipX = false;
-            bool usedFlipY = false;
-
-            if (objsY.size() < best->size()) { //objsY is best
-                best = &objsY; 
-                usedFlipX = false; 
-                usedFlipY = true;
-            }
-            if (objsX.size() < best->size()) { //objsX is best
-                best = &objsX; 
-                usedFlipX = true; 
-                usedFlipY = false;
-            }
-            if (objsXY.size() < best->size()) { //objsXY is best
-                best = &objsXY; 
-                usedFlipX = true; 
-                usedFlipY = true;
+            // Wait for all tasks to finish
+            std::array<TileVariant, taskCount> contenders;
+            for (uint8_t i = 0; i < taskCount; ++i) {
+                contenders[i] = tasks[i].blockOn();
             }
 
-            *best = removeRedundantObjects(*best, tw, th);
-            shrinkObjects(*best, tw, th);
-            assignZOrder(*best);
+            //chooses the tile variant with the least amount of objects
+            auto bestVariant = std::min_element(contenders.begin(), contenders.end(),
+                [](const TileVariant& a, const TileVariant& b) {
+                    return a.objects.size() < b.objects.size();
+                }
+            );
 
-            for (auto& o : *best) {
-                if (usedFlipY) o.y = th - o.y - o.height;
-                if (usedFlipX) o.x = tw - o.x - o.width;
+            std::vector<GDObject>* tileObjects = &bestVariant->objects;
+            //shrinkObjects(*tileObjects, bestVariant->rotation == 0 ? tw : th, bestVariant->rotation == 0 ? th : tw);
+            assignZOrder2(*tileObjects);
 
-                o.x += x0;
-                o.y += y0;
-                totalObj.push_back(o);
-            }
+            undoFlippedTile(*bestVariant, x0, y0, tw, th);
+            totalObj.insert(totalObj.end(), tileObjects->begin(), tileObjects->end());
         }
     }
     return totalObj;
+}
+
+void ImageConverter::assignZOrder2(std::vector<GDObject>& objects) {
+    struct Entry {
+        int color = -1;
+        int z = INT_MIN;
+        int zLayerOffset = 0;
+    };
+
+    struct PixelState {
+        Entry first;
+        Entry second;
+
+        // Track offset-2 colors independently of Z-order.
+        int offset2Color1 = -1;
+        int offset2Color2 = -1;
+    };
+
+    std::unordered_map<PixelPosition, PixelState, PixelPositionHash> pixels;
+
+    // VERY Rough estimate.
+    pixels.reserve(objects.size() * 4);
+
+    auto updateEntry = [](Entry& entry, const GDObject& obj) {
+        if (entry.color != obj.color) {
+            return;
+        }
+
+        if (obj.zOrder > entry.z) {
+            entry.z = obj.zOrder;
+            entry.zLayerOffset = obj.ZLayerOffset;
+        }
+    };
+
+    auto insertEntry = [&](PixelState& state, const GDObject& obj) {
+        // Track offset-2 colors independently of Z-order.
+        if (obj.ZLayerOffset == 2) {
+            if (state.offset2Color1 == -1 ||
+                state.offset2Color1 == obj.color) {
+                state.offset2Color1 = obj.color;
+            }
+            else if (state.offset2Color2 == -1 ||
+                state.offset2Color2 == obj.color) {
+                state.offset2Color2 = obj.color;
+            }
+        }
+
+        // Update an existing color's maximum Z-order.
+        if (state.first.color == obj.color) {
+            updateEntry(state.first, obj);
+        }
+        else if (state.second.color == obj.color) {
+            updateEntry(state.second, obj);
+        }
+        else {
+            Entry entry{ obj.color, obj.zOrder, obj.ZLayerOffset };
+
+            if (entry.z > state.first.z) {
+                state.second = state.first;
+                state.first = entry;
+            }
+            else if (entry.z > state.second.z) {
+                state.second = entry;
+            }
+        }
+
+        // Keep entries sorted by Z-order.
+        if (state.second.z > state.first.z) {
+            std::swap(state.first, state.second);
+        }
+    };
+
+    for (auto& o : objects) {
+        int requiredZ = INT_MIN;
+        bool overlapsOffset2DifferentColor = false;
+
+        o.forEachPixel([&](int x, int y) {
+            PixelPosition pixel{ x, y };
+
+            auto it = pixels.find(pixel);
+            if (it == pixels.end()) {
+                return true;
+            }
+
+            const PixelState& state = it->second;
+
+            // Preserve the existing Z-order calculation.
+            const Entry& candidate = state.first.color != o.color ? state.first : state.second;
+
+            if (candidate.color != -1 &&
+                candidate.z > requiredZ) {
+                requiredZ = candidate.z;
+            }
+
+            // Check independently for a differently colored object that requires ZLayerOffset == 2.
+            if ((state.offset2Color1 != -1 && state.offset2Color1 != o.color) || (state.offset2Color2 != -1 && state.offset2Color2 != o.color)) {
+                overlapsOffset2DifferentColor = true;
+            }
+
+            return true;
+            });
+
+        // Ensure this object renders above overlapping objects of different colors.
+        if (requiredZ != std::numeric_limits<int>::min() && o.zOrder < requiredZ + 1) {
+            o.zOrder = requiredZ + 1;
+            if (o.zOrder == 0) {
+                ++o.zOrder;
+            }
+        }
+
+        // Propagate offset 2 independently of the highest-Z object.
+        if (overlapsOffset2DifferentColor && o.ZLayerOffset == 0) {
+            o.ZLayerOffset = 2;
+        }
+
+        // Record this object's final state at every covered pixel.
+        o.forEachPixel([&](int x, int y) {
+            insertEntry(pixels[PixelPosition{x, y}], o);
+            return true;
+        });
+    }
 }
 
 void ImageConverter::assignZOrder(std::vector<GDObject>& objects) {
@@ -375,7 +405,19 @@ std::vector<GDObject> ImageConverter::removeRedundantObjects(const std::vector<G
     //build coverage
     for (size_t i = 0; i < objects.size(); i++) {
         const GDObject& obj = objects[i];
-        for (int y = obj.y; y < obj.y + obj.height; y++) {
+
+
+        obj.forEachPixel([&](int x, int y) {
+            if (cov[x][y] == 0 || objects[std::abs(cov[x][y]) - 1].color != obj.color) {
+                cov[x][y] = i + 1;
+            }
+            else {
+                cov[x][y] = -(int)(i + 1);
+            }
+            return true;
+        });
+
+        /*for (int y = obj.y; y < obj.y + obj.height; y++) {
             for (int x = obj.x; x < obj.x + obj.width; x++) {
                 if (cov[x][y] == 0 || objects[std::abs(cov[x][y]) - 1].color != obj.color) {
                     cov[x][y] = i + 1;
@@ -385,14 +427,23 @@ std::vector<GDObject> ImageConverter::removeRedundantObjects(const std::vector<G
                 }
 
             }
-        }
+        }*/
     }
 
     //remove objects
+    //bool visible;
     for (size_t i = 0; i < objects.size(); i++) {
         const GDObject& obj = objects[i];
-        bool visible = false;
 
+        obj.forEachPixel([&](int x, int y) {
+            if (std::abs(cov[x][y]) - 1 == (int)i && cov[x][y] > 0) {
+                nonRedundant.push_back(obj);
+                return false; // return false is like breaking the loop
+            }
+            return true; // continue iterating
+        });
+
+        /*visible = false;
         for (int y = obj.y; y < obj.y + obj.height && !visible; y++) {
             for (int x = obj.x; x < obj.x + obj.width; x++) {
 
@@ -403,37 +454,34 @@ std::vector<GDObject> ImageConverter::removeRedundantObjects(const std::vector<G
                 }
 
             }
-        }
+        }*/
     }
     return nonRedundant;
 }
 
 void ImageConverter::shrinkObjects(std::vector<GDObject>& objects, int width, int height) {
-    std::vector<std::vector<std::vector<int>>> cov(width, std::vector<std::vector<int>>(height));
+    std::vector<std::vector<int>> cov(width, std::vector<int>(height));
+    std::vector<std::vector<int>> color_below(width, std::vector<int>(height, -1));
 
     //fill cov
     for (size_t i = 0; i < objects.size(); i++) {
         const GDObject& obj = objects[i];
         for (int y = obj.y; y < obj.y + obj.height; y++) {
             for (int x = obj.x; x < obj.x + obj.width; x++) {
-                cov[x][y].push_back(i);
+                cov[x][y] = i;
             }
         }
     }
 
-    //shrink objects
     for (size_t i = 0; i < objects.size(); i++) {
         GDObject& obj = objects[i];
         bool canShrink = true;
 
-        // shrink top
+        //shrink top
         while (canShrink && obj.height > 1) {
-            int y = obj.y;
-            for (int x = obj.x; x < obj.x + obj.width; x++) {
-                auto& list = cov[x][y];
-                int size = list.size();
-                int ind = list[size - 1];
-                if (ind == (int)i && (size == 1 || objects[list[size - 2]].color != obj.color)) {
+            const int y = obj.y;
+            for (size_t x = obj.x; x < obj.x + obj.width; x++) {
+                if (cov[x][y] == i && color_below[x][y] != obj.color) {
                     canShrink = false;
                     break;
                 }
@@ -441,44 +489,30 @@ void ImageConverter::shrinkObjects(std::vector<GDObject>& objects, int width, in
             if (canShrink) {
                 obj.y++;
                 obj.height--;
-                for (int x = obj.x; x < obj.x + obj.width; x++) {
-                    auto& list = cov[x][y];
-                    list.erase(std::find(list.begin(), list.end(), i));
-                }
             }
         }
-
-        // shrink bottom
         canShrink = true;
+
+        //shrink bottom
         while (canShrink && obj.height > 1) {
-            int y = obj.y + obj.height - 1;
-            for (int x = obj.x; x < obj.x + obj.width; x++) {
-                auto& list = cov[x][y];
-                int size = list.size();
-                int ind = list[size - 1];
-                if (ind == (int)i && (size == 1 || objects[list[size - 2]].color != obj.color)) {
+            const int y = obj.y + obj.height - 1;
+            for (size_t x = obj.x; x < obj.x + obj.width; x++) {
+                if (cov[x][y] == i && color_below[x][y] != obj.color) {
                     canShrink = false;
                     break;
                 }
             }
             if (canShrink) {
                 obj.height--;
-                for (int x = obj.x; x < obj.x + obj.width; x++) {
-                    auto& list = cov[x][y];
-                    list.erase(std::find(list.begin(), list.end(), i));
-                }
             }
         }
-
-        // shrink left
         canShrink = true;
+
+        //shrink left
         while (canShrink && obj.width > 1) {
-            int x = obj.x;
-            for (int y = obj.y; y < obj.y + obj.height; y++) {
-                auto& list = cov[x][y];
-                int size = list.size();
-                int ind = list[size - 1];
-                if (ind == (int)i && (size == 1 || objects[list[size - 2]].color != obj.color)) {
+            const int x = obj.x;
+            for (size_t y = obj.y; y < obj.y + obj.height; y++) {
+                if (cov[x][y] == i && color_below[x][y] != obj.color) {
                     canShrink = false;
                     break;
                 }
@@ -486,38 +520,33 @@ void ImageConverter::shrinkObjects(std::vector<GDObject>& objects, int width, in
             if (canShrink) {
                 obj.x++;
                 obj.width--;
-                for (int y = obj.y; y < obj.y + obj.height; y++) {
-                    auto& list = cov[x][y];
-                    list.erase(std::find(list.begin(), list.end(), i));
-                }
             }
         }
-
-        // shrink right
         canShrink = true;
+
+        //shrink right
         while (canShrink && obj.width > 1) {
-            int x = obj.x + obj.width - 1;
-            for (int y = obj.y; y < obj.y + obj.height; y++) {
-                auto& list = cov[x][y];
-                int size = list.size();
-                int ind = list[size - 1];
-                if (ind == (int)i && (size == 1 || objects[list[size - 2]].color != obj.color)) {
+            const int x = obj.x + obj.width - 1;
+            for (size_t y = obj.y; y < obj.y + obj.height; y++) {
+                if (cov[x][y] == i && color_below[x][y] != obj.color) {
                     canShrink = false;
                     break;
                 }
             }
             if (canShrink) {
                 obj.width--;
-                for (int y = obj.y; y < obj.y + obj.height; y++) {
-                    auto& list = cov[x][y];
-                    list.erase(std::find(list.begin(), list.end(), i));
-                }
+            }
+        }
+
+        for (size_t y = obj.y; y < obj.y + obj.height; y++) {
+            for (size_t x = obj.x; x < obj.x + obj.width; x++) {
+                color_below[x][y] = obj.color;
             }
         }
     }
 }
 
-cocos2d::ccHSVValue ImageConverter::RGBtoHSV(const cocos2d::ccColor4B& color){
+cocos2d::ccHSVValue ImageConverter::RGBtoHSV(const cocos2d::ccColor4B& color) {
     float r = color.r / 255.0f;
     float g = color.g / 255.0f;
     float b = color.b / 255.0f;
@@ -561,7 +590,7 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
 
     unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 4);
     if (!data) {
-        FLAlertLayer::create("Error", "Failed to load image", "OK")->show();
+        FLAlertLayer::create("Error", "Failed to load image. The image format used might not be supported.", "OK")->show();
         return;
     }
 
@@ -571,20 +600,7 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
     std::unordered_map<uint32_t, cocos2d::ccHSVValue> hsv;
     std::vector<std::vector<cocos2d::ccColor4B>> image(height, std::vector<cocos2d::ccColor4B>(width));
 
-    /*if (hsvMode) {
-        if (createColTrigs) {
-            auto colTrigger = static_cast<EffectGameObject*>(ui->m_editorLayer->createObject(899, ccp(-15, 90), false));
-            colTrigger->m_targetColor = startColorID;
-            colTrigger->m_triggerTargetColor = { 255, 255, 255 };
-            colTrigger->m_duration = 0;
-            auto label = colTrigger->getChildByType<CCLabelBMFont>(0);
-            label->setString(fmt::to_string(colTrigger->m_targetColor).c_str());
-        }
-        else {
-            ui->m_editorLayer->m_levelSettings->m_effectManager->setColorAction(ColorAction::create({ 255, 255, 255 }, false, 0), startColorID);
-        }
-    }*/
-
+    //get color palette or hsv values of image
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int i = (y * width + x) * 4;
@@ -609,7 +625,7 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
                     }
 
                     if (createColTrigs) {
-                        auto colTrigger = static_cast<EffectGameObject*>(ui->m_editorLayer->createObject(899, ccp(-15, 90+colorIndex*15), false));
+                        auto colTrigger = static_cast<EffectGameObject*>(ui->m_editorLayer->createObject(899, ccp(-15, 90 + colorIndex * 15), false));
                         colTrigger->m_targetColor = startColorID + colorIndex - 1;
                         colTrigger->m_triggerTargetColor = { pixelCol.r, pixelCol.g, pixelCol.b };
                         colTrigger->m_duration = 0;
@@ -626,38 +642,84 @@ void ImageConverter::run(const std::string& path, float scale, int startColorID,
     }
     stbi_image_free(data);
 
-    auto gdObjects = ImageConverter::imgToGDObjects(image, palette, zLayer, startingZOrder, tileWidth, tileHeight);
+    auto start = std::chrono::steady_clock::now();
+
+    //convert image to gd objects
+    const std::vector<GDObject> gdObjects = ImageConverter::imgToGDObjects(image, palette, zLayer, startingZOrder, tileWidth, tileHeight);
+
+    auto end = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration<double, std::milli>(end - start).count();
+    log::debug("Import delay: {:.3f} ms", elapsed);
+
     bool zOrderPassedZero = false;
 
+    //every object with the same linkID is put in the same list, each id has its own list of objects belonging to that group
     std::unordered_map<int, cocos2d::CCArray*> groupedObjects;
 
-    for (const auto& o : gdObjects) {
-        float centerX = 180.0f + (o.x * scale + ((o.width * scale) / 2.0f)) * 7.5f;
-        float centerY = 720.0f - (o.y * scale + ((o.height * scale) / 2.0f)) * 7.5f;
+    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    CCPoint center = ui->m_editorLayer->m_objectLayer->convertToNodeSpace(ccp(winSize.width / 2.f, winSize.height / 2.f));
+    center.x = (int)((center.x - width * 3.75f * scale) / 30) * 30.f;
+    center.y = (int)((center.y + height * 3.75f * scale) / 30) * 30.f;
+
+    //creates and places the gd objects in the level
+    //for (const auto& o : gdObjects) { //1 block is 30 units. 1 pixel is 1/4 of a block, so its 7.5 units.
+    for (int h = gdObjects.size() - 1; h >= 0; h--) {
+        const GDObject& o = gdObjects[h];
+
+        /*float centerX = center.x + ((o.x + o.width / 2.f) * 7.5f * scale);
+        float centerY = center.y - ((o.y + o.height / 2.f) * 7.5f * scale);
+        if (o.rotation % 2 != 0) {
+            centerX = center.x + ((o.x + o.height / 2.f) * 7.5f * scale);
+            centerY = center.y - ((o.y + o.width / 2.f) * 7.5f * scale);
+        }*/
+
+        float placePosX = center.x + o.getRealXPosition(scale);
+        float placePosY = center.y - o.getRealYPosition(scale);
+
+        /*if (o.objectType == ObjectType::STAIR)
+            log::debug(
+                "Stair x={}, y={}, rot={}, flipX={}, flipY={}, "
+                "scaleX={}, scaleY={}, offset={}, realX={}, realY={}",
+                o.x, o.y, o.rotation, o.flipX, o.flipY,
+                o.scaleX, o.scaleY, o.positionOffset,
+                placePosX,
+                placePosY
+            );*/
 
         if (o.zOrder == 0) zOrderPassedZero = true;
 
-        auto gameObject = ui->m_editorLayer->createObject(917, CCPoint(centerX, centerY), false);
+        auto gameObject = ui->m_editorLayer->createObject(o.objectType, CCPoint(placePosX, placePosY), false);
         if (hsvMode) {
-            auto& hsvv = gameObject->m_baseColor->m_hsv;
-            hsvv = hsv[startColorID + o.color - 1];
+            auto& hsvb = gameObject->m_baseColor->m_hsv;
+            hsvb = hsv[startColorID + o.color - 1];
+            hsvb.absoluteSaturation = true;
+            hsvb.absoluteBrightness = true;
+            gameObject->m_baseColor->m_colorID = 1010;
 
-            hsvv.absoluteSaturation = true;
-            hsvv.absoluteBrightness = true;
-
-            //gameObject->m_baseColor->m_hsv = hsv[startColorID + o.color - 1];
-            gameObject->m_baseColor->m_colorID = 1010;//startColorID;
+            if (o.hasDetailColor) {
+                auto& hsvd = gameObject->m_detailColor->m_hsv;
+                hsvd = hsv[startColorID + o.color - 1];
+                hsvd.absoluteSaturation = true;
+                hsvd.absoluteBrightness = true;
+                gameObject->m_detailColor->m_colorID = 1010;
+            }
         }
         else {
             gameObject->m_baseColor->m_colorID = startColorID + o.color - 1;
+            if (o.hasDetailColor)
+                gameObject->m_detailColor->m_colorID = startColorID + o.color - 1;
         }
 
         gameObject->m_zOrder = zOrderPassedZero ? o.zOrder + 1 : o.zOrder;
-        gameObject->updateCustomScaleX(o.width * scale);
-        gameObject->updateCustomScaleY(o.height * scale);
-        gameObject->setCustomZLayer(5);
+        //m_pixelScaleX/Y is a hardcoded base multiplier for some pixel objects
+        gameObject->updateCustomScaleX(gameObject->m_pixelScaleX * o.scaleX * o.baseScale * scale + 2.f / 300.f); //+2 pixel width to remove graphical glitch lines
+        gameObject->updateCustomScaleY(gameObject->m_pixelScaleY * o.scaleY * o.baseScale * scale + 2.f / 300.f); //+2 pixel height to remove graphical glitch lines
+        gameObject->setRotation(o.rotation * 90);
+        gameObject->setFlipX(o.flipX);
+        gameObject->setFlipY(o.flipY);
+        gameObject->setCustomZLayer(5 + o.ZLayerOffset);
         gameObject->m_editorLayer = o.zLayer;
-        
+
         if (groupedObjects.find(o.linkID) == groupedObjects.end()) {
             groupedObjects[o.linkID] = cocos2d::CCArray::create();
             groupedObjects[o.linkID]->retain();

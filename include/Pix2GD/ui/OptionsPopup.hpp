@@ -25,6 +25,7 @@ protected:
 public:
     static OptionsPopup* create(std::string const& text);
     void onBrowse(CCObject* sender);
+    void onInfo(CCObject* sender);
     void onImport(CCObject* sender);
     void renderImage(const std::filesystem::path& path);
 };
